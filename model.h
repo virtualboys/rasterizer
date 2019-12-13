@@ -7,8 +7,7 @@
 
 class Model {
 private:
-    std::vector<Vec3f> verts_;
-    std::vector<std::vector<Vec3i> > faces_; // attention, this Vec3i means vertex/uv/normal
+    
     std::vector<Vec3f> norms_;
     std::vector<Vec2f> uv_;
     TGAImage diffusemap_;
@@ -28,6 +27,10 @@ public:
     TGAColor diffuse(Vec2f uv);
     float specular(Vec2f uv);
     std::vector<int> face(int idx);
+    std::vector<Vec3f> verts_;
+    std::vector<float> verts_2;
+    std::vector<std::vector<Vec3i> > faces_; // attention, this Vec3i means vertex/uv/normal
+    std::vector<int> faces_2;
 };
 #endif //__MODEL_H__
 

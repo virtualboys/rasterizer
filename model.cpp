@@ -4,7 +4,7 @@
 #include "model.h"
 #include "geometry.h"
 
-Model::Model(const char *filename) : verts_(), faces_(), norms_(), uv_(), diffusemap_(), normalmap_(), specularmap_() {
+Model::Model(const char *filename) : verts_(), faces_(), faces_2(), verts_2(), norms_(), uv_(), diffusemap_(), normalmap_(), specularmap_() {
     std::ifstream in;
     in.open (filename, std::ifstream::in);
     if (in.fail()) return;
@@ -18,6 +18,9 @@ Model::Model(const char *filename) : verts_(), faces_(), norms_(), uv_(), diffus
             Vec3f v;
             for (int i=0;i<3;i++) iss >> v[i];
             verts_.push_back(v);
+            verts_2.push_back(v[0]);
+            verts_2.push_back(v[1]);
+            verts_2.push_back(v[2]);
         } else if (!line.compare(0, 3, "vn ")) {
             iss >> trash >> trash;
             Vec3f n;
@@ -39,6 +42,15 @@ Model::Model(const char *filename) : verts_(), faces_(), norms_(), uv_(), diffus
                 f.push_back(tmp);
             }
             faces_.push_back(f);
+            faces_2.push_back(f[0][0]);
+            faces_2.push_back(f[0][1]);
+            faces_2.push_back(f[0][2]);
+            faces_2.push_back(f[1][0]);
+            faces_2.push_back(f[1][1]);
+            faces_2.push_back(f[1][2]);
+            faces_2.push_back(f[2][0]);
+            faces_2.push_back(f[2][1]);
+            faces_2.push_back(f[2][2]);
         }
     }
     std::cerr << "# v# " << verts_.size() << " f# "  << faces_.size() << " vt# " << uv_.size() << " vn# " << norms_.size() << std::endl;

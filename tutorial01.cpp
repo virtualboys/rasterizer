@@ -24,11 +24,14 @@ GLFWwindow* window;
 #include <unistd.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <limits>
 
 #include "tgaimage.h"
 #include "model.h"
 #include "geometry.h"
 #include "our_gl.h"
+
+#include "cl_renderer.hpp"
 
 volatile int STOP=false;
 unsigned char buf[255];
@@ -41,8 +44,8 @@ using namespace glm;
 
 Model *model        = NULL;
 
-const int width  = 100;
-const int height = 100;
+const int width  = 1080;
+const int height = 720;
 
 Vec3f light_dir(1,1,1);
 Vec3f       eye(1,1,3);
@@ -123,6 +126,21 @@ void init_port(int *fd, unsigned int baud)
    tcsetattr(*fd,TCSANOW,&options);
 }
 
+int init_serial() {
+    std::cout<<"OK HERE"<<std::endl;
+    int fd;
+    fd = open("/dev/tty.usbmodem14201", O_RDWR | O_NOCTTY | O_NDELAY); // List usbSerial devices using Terminal ls /dev/tty.*
+     
+    if(fd == -1) {                        // Check for port errors
+           std::cout << fd;
+           perror("Unable to open serial port\n");
+           return (0);
+     }
+     
+     std::cout << "Serial Port is open\n";
+    return fd;
+}
+
 int readArduinoVal(int fd) {
     char buffer[100];
 
@@ -183,7 +201,7 @@ int main( int argc, char** argv )
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
 	// Open a window and create its OpenGL context
-	window = glfwCreateWindow( 3*width, 3*height, "Tutorial 05 - Textured Cube", NULL, NULL);
+	window = glfwCreateWindow( width, height, "Tutorial 05 - Textured Cube", NULL, NULL);
 	if( window == NULL ){
 		fprintf( stderr, "Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible. Try the 2.1 version of the tutorials.\n" );
 		glfwTerminate();
@@ -313,28 +331,52 @@ int main( int argc, char** argv )
 		//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
 
 		// ... nice trilinear filtering ...
-    std::cout<<"OK HERE"<<std::endl;
-    int fd;
-    fd = open("/dev/tty.usbmodem14201", O_RDWR | O_NOCTTY | O_NDELAY); // List usbSerial devices using Terminal ls /dev/tty.*
-     
-    if(fd == -1) {                        // Check for port errors
-           std::cout << fd;
-           perror("Unable to open serial port\n");
-           return (0);
-     }
-     
-     std::cout << "Serial Port is open\n";
-     
-     // Write to Serial Port
-     init_port(&fd,9600);                  //set serial port to 9600,8,n,1
     
+    
+    //int fd = init_serial();
+    //init_port(&fd,9600);                  //set serial port to 9600,8,n,1
+    
+    
+    cl_renderer clRend;
+    size_t N = width * height * 3;
+    clRend.init(N);
+    clRend.loadProgram("../tutorial01_first_window/testProg.cl");
+    
+    int i = 0;
+    std::vector<float> vertData(9);
+    vertData[i++] = .7f; vertData[i++] = 1; vertData[i++] = .5f;
+    vertData[i++] = .3f; vertData[i++] = 0; vertData[i++] = .5f;
+    vertData[i++] = 0; vertData[i++] = 0; vertData[i++] = .5f;
+    
+    i=0;
+    std::vector<int> indData(9);
+    indData[i++] = 0; indData[i++] = 0; indData[i++] = 0;
+    indData[i++] = 1; indData[i++] = 1; indData[i++] = 1;
+    indData[i++] = 2; indData[i++] = 2; indData[i++] = 2;
+    
+    glm::mat4 viewportMat;
+    viewportMat[3][0] = width/2.f;
+    viewportMat[3][1] = height/2.f;
+    viewportMat[3][2] = 1.f;
+    viewportMat[0][0] = width/2.f;
+    viewportMat[1][1] = height/2.f;
+    viewportMat[2][2] = 0;
+    
+    clRend.loadData(model->faces_2, model->verts_2, model->nfaces(), viewportMat);
+    
+    for(i = 0; i < width*height; i++) {
+        zbuffer[i] = std::numeric_limits<float>::min();
+    }
+    
+//    clRend.runProgram(indData, vertData, 1, viewportMat, data, zbuffer, width, height);
+//    clRend.runProgram( data, zbuffer, width, height);
     
 	bool increasing = false;
 	double previousTime = glfwGetTime();
 	int frameCount = 0;
 
 	do{
-        
+            clRend.runProgram(model->faces_2, model->verts_2, model->nfaces(), viewportMat, data, zbuffer, width, height);
 //        std::cout << readArduinoVal(fd) <<std::endl;
         
 		frameCount++;
@@ -357,14 +399,14 @@ int main( int argc, char** argv )
 			}
 		}
 		
-		lookat(eye, center, up);
-	    for (int i=width*height; i--; zbuffer[i] = -std::numeric_limits<float>::max());
-		for (int i=0; i<model->nfaces(); i++) {
-            for (int j=0; j<3; j++) {
-                shader.vertex(i, j);
-            }
-            triangle(shader.varying_tri, shader, frame, zbuffer);
-        }
+//		lookat(eye, center, up);
+//	    for (int i=width*height; i--; zbuffer[i] = -std::numeric_limits<float>::max());
+//		for (int i=0; i<model->nfaces(); i++) {
+//            for (int j=0; j<3; j++) {
+//                shader.vertex(i, j);
+//            }
+//            triangle(shader.varying_tri, shader, frame, zbuffer);
+//        }
 	    //frame.flip_vertically(); // to place the origin in the bottom left corner of the image
 	    //frame.write_tga_file("framebuffer.tga");
 
@@ -379,8 +421,8 @@ int main( int argc, char** argv )
 		
 		// "Bind" the newly created texture : all future texture functions will modify this texture
 		glBindTexture(GL_TEXTURE_2D, textureID);
-		glTexSubImage2D(GL_TEXTURE_2D, 0,0,0,width, height,GL_BGR,GL_UNSIGNED_BYTE, frame.buffer());
-
+//		glTexSubImage2D(GL_TEXTURE_2D, 0,0,0,width, height,GL_BGR,GL_UNSIGNED_BYTE, frame.buffer());
+        glTexSubImage2D(GL_TEXTURE_2D, 0,0,0,width, height,GL_BGR,GL_UNSIGNED_BYTE, data);
 
 
 
@@ -449,7 +491,7 @@ int main( int argc, char** argv )
 	delete [] data;
     delete [] zbuffer;
     delete model;
-    close(fd);
+    //close(fd);
 
 
 	// Close OpenGL window and terminate GLFW

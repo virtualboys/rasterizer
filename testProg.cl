@@ -21,6 +21,12 @@ float3 barycentric(float2 A, float2 B, float2 C, float2 P) {
     return (float3)(-1,1,1); // in this case generate negative coordinates, it will be thrown away by the rasterizator
 }
 
+float3 interpolateBary(float3 a, float3 b, float3 c, float3 bar) {
+	return (float3)(a.x * bar.x + b.x * bar.y + c.x * bar.z, 
+					a.y * bar.x + b.y * bar.y + c.y * bar.z, 
+					a.z * bar.x + b.z * bar.y + c.z * bar.z);
+}
+
 void printVec(float4 vec) {
 	printf("vec: %f %f %f %f\n", vec.x, vec.y, vec.z, vec.w);
 }
@@ -29,37 +35,37 @@ kernel void rasterizer(
 		ulong nTris,
 		int width,
 		int height,
+		float offset,
 		global float* zbuffer,
 		global const float4* viewport, 
 		global const float* vertices,
+		global const float* normalsIn,
 		global const int* indices,
-		global char* screen)
+		global char* screen,
+		global float* normalsOut)
 {
 	size_t faceInd = get_global_id(0);
 
 	float3 homoZs;
 	float4 vsVP[3];
 	float3 vs[3];
+	float3 ns[3];
 	for(int i = 0; i < 3; i++) {
 		// indices are vertex/uv/normal
-		// printf("indind: %d \n", faceInd*9+i*3);
 		int vertInd = indices[faceInd*9+i*3];
-		// printf("ind: %d \n", vertInd);
-
-		// float4 vertHomo = float4(vertices[vertInd*4],vertices[vertInd*4+1],vertices[vertInd*4+2],vertices[vertInd*4+3]);
-		float4 vertHomo = (float4)(vertices[vertInd*3], vertices[vertInd*3+1], vertices[vertInd*3+2], 1.0f);
-		// vertHomo = (float4)(vertInd, vertInd+2, 10, 1.0f);
-		// vertHomo.y = 4;
-		//printVec(vertHomo);
+		int uvInd = indices[faceInd*9+i*3+1];
+		int normalInd = indices[faceInd*9+i*3+2];
+		normalInd = vertInd;
+		
+		float4 vertHomo = (float4)(vertices[vertInd*4], vertices[vertInd*4+1], vertices[vertInd*4+2], vertices[vertInd*4+3]);
+		
 		homoZs[i] = vertHomo.z;
 		vertHomo = vec4_mul_mat4(vertHomo, viewport);
 		vsVP[i] = vertHomo;
 		vs[i] = vertHomo.xyz / vertHomo.w;
-	}
 
-	// printf("v1: %f %f %f\n", vs[0].x, vs[0].y, vs[0].z);
-	// printf("v2: %f %f %f\n", vs[1].x, vs[1].y, vs[1].z);
-	// printf("v3: %f %f %f\n", vs[2].x, vs[2].y, vs[2].z);
+		ns[i] = (float3)(normalsIn[normalInd*3], normalsIn[normalInd*3+1], normalsIn[normalInd*3+2]);
+	}
 
 	float2 bboxmin = (float2)(INFINITY,INFINITY);
 	float2 bboxmax = (float2)(-INFINITY,-INFINITY);
@@ -72,11 +78,6 @@ kernel void rasterizer(
             bboxmax[j] = min(clampCoords[j], max(bboxmax[j], vs[i][j]));
         }
     }
-
-    // bboxmin.x = 0;
-    // bboxmin.y = 0;
-    // bboxmax.x = width;
-    // bboxmax.y = height;
 
     int2 pix;
     for (pix.x=bboxmin.x; pix.x<=bboxmax.x; pix.x++) {
@@ -91,64 +92,74 @@ kernel void rasterizer(
             float frag_depth = dot(homoZs, bc_clip);// clipc[2]*bc_clip;
             //printf("frag: %f\n", frag_depth);
             int pixInd = pix.x+pix.y*width;
+
             if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[pixInd]>frag_depth) continue;
-            //bool discard = shader.fragment(bc_clip, color);
-            //if (!discard) {
-                zbuffer[pixInd] = frag_depth;
-                screen[pixInd*3] = (.5f + .5f * bc_screen.x) * 255;
-                screen[pixInd*3+1] = (.5f + .5f * bc_screen.y) * 255;
-                screen[pixInd*3+2] = (.5f + .5f * bc_screen.z) * 255;
-            //}
+
+            zbuffer[pixInd] = frag_depth;
+            zbuffer[(int)(pixInd * (1.0f + offset))] = frag_depth;
+            screen[pixInd*3] = (.5f + .5f * bc_screen.x) * 255;
+            screen[pixInd*3+1] = (.5f + .5f * bc_screen.y) * 255;
+            screen[pixInd*3+2] = (.5f + .5f * bc_screen.z) * 255;
+
+            float3 n = interpolateBary(ns[0], ns[1], ns[2], bc_clip);
+            normalsOut[pixInd*3] = n.x;
+            normalsOut[pixInd*3+1] = n.y;
+            normalsOut[pixInd*3+2] = n.z;
         }
     }
-
-    // for (pix.x=0; pix.x<=width; pix.x++) {
-    //     for (pix.y=0; pix.y<=height; pix.y++) {
-    //     	    int pixInd = pix.x+pix.y*width;
-    //             screen[pixInd*3] = 255;
-    //             screen[pixInd*3+1] = 100;
-    //             screen[pixInd*3+2] = 0;
-    //         //}
-    //     }
-    // }
 }
 
 kernel void fragment(
-		ulong n,
 		int width,
 		int height,
-		global const float *a,
-		global const float *b,
-		global char *c
+		float3 viewDir,
+		global const float* zBuffer,
+		global const float* normals,
+		global char* color
 	)
 {
 	size_t i = get_global_id(0);
-	int pix = i / 3;
-	int x = pix % width;
-	int y = pix / width;
+	int x = i % width;
+	int y = i / width;
 
-	if (i < n) {
-		// c[i] = a[i] + b[i];
-		// c[i] = 256 * (((float)i) / n);
-		c[i] = 256 * ((float)x + y) / (width + height);
-		// c[i] =
+	float3 n = (float3)(normals[i*3], normals[i*3+1], normals[i*3+2]);
+
+	// printf("zbuf: %f", zBuffer[i]);
+	if(zBuffer[i] > .1f) {
+		float val = dot(n, viewDir);
+		// color[i*3] = (char)(n.x * 255);
+		// color[i*3+1] = (char)(n.y * 255);
+		// color[i*3+2] = (char)(n.z * 255);	
+		color[i*3] = val * (char)(255);
+		color[i*3+1] = val * (char)(255);
+		color[i*3+2] = val * (char)(255);	
 	}
 }
 
 kernel void vertex(
 		ulong n,
+		global const float4* mvp, 
+		global const float4* modelMat,
 		global const float* vertices,
-		global float* positions
+		global const float* normalsIn,
+		global float* positions,
+		global float* normalsOut
 	)
 {
 	size_t i = get_global_id(0);
-	float x = vertices[i*3];
-	float y = vertices[i*3+1];
-	float z = vertices[i*3+2];
-	float w = 1.0f;
+	float4 vert = (float4)(vertices[i*3], vertices[i*3+1], vertices[i*3+2], 1.0f);
+	vert = vec4_mul_mat4(vert, mvp);
 
-	positions[i*4] = x;
-	positions[i*4+1] = y;
-	positions[i*4+2] = z;
-	positions[i*4+3] = w;
+	positions[i*4] = vert.x;
+	positions[i*4+1] = vert.y;
+	positions[i*4+2] = vert.z;
+	positions[i*4+3] = vert.w;
+
+	float4 normal = (float4)(normalsIn[i*3], normalsIn[i*3+1], normalsIn[i*3+2],1.0f);
+	normal = vec4_mul_mat4(normal, modelMat);
+	normalize(normal);
+
+	normalsOut[i*3] = normal.x;
+	normalsOut[i*3+1] = normal.y;
+	normalsOut[i*3+2] = normal.z;
 }

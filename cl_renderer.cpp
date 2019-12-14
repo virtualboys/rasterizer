@@ -1,4 +1,4 @@
-
+#include <GL/glew.h>
 #include "cl_renderer.hpp"
 #include <OpenCL/cl.hpp>
 #include <vector>
@@ -9,21 +9,6 @@
 #include "model.h"
 
 #pragma OPENCL EXTENSION cl_amd_printf : enable
-
-
-//static const char source[] =
-//    "kernel void add(\n"
-//    "       ulong n,\n"
-//    "       global const float *a,\n"
-//    "       global const float *b,\n"
-//    "       global float *c\n"
-//    "       )\n"
-//    "{\n"
-//    "    size_t i = get_global_id(0);\n"
-//    "    if (i < n) {\n"
-//    "       c[i] = a[i] + b[i];\n"
-//    "    }\n"
-//    "}\n";
 
 cl_renderer::cl_renderer() {
     
@@ -77,8 +62,12 @@ bool cl_renderer::init(size_t size) {
         }
 
         std::cout << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
+        std::cout <<devices[0].getInfo<CL_DEVICE_EXTENSIONS>()<<std::endl;
+//        if(devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_gl_sharing") == std::string::npos) {
+//            std::cerr<<"Device interop not supported"<<std::endl;
+//        }
         
-        workSize = size;
+        numFaces = size;
         
         return true;
         
@@ -106,18 +95,18 @@ void cl_renderer::loadProgram(std::string path) {
         return;
     }
 
-    // Create command queue.
     queue = cl::CommandQueue(context, devices[0]);
 
-    // Compile OpenCL program for found device.
     program = cl::Program(context, cl::Program::Sources(
             1, std::make_pair(text.c_str(), text.length())
             ));
     
-
     try {
         program.build(devices);
-        kernel = cl::Kernel(program, "rasterizer");
+        rasterizer = cl::Kernel(program, "rasterizer");
+        fragmentShader = cl::Kernel(program, "fragment");
+        vertexShader = cl::Kernel(program, "vertex");
+
     } catch (const cl::Error&) {
         std::cerr
         << "OpenCL compilation error" << std::endl
@@ -127,19 +116,62 @@ void cl_renderer::loadProgram(std::string path) {
     std::cout << "Program at " << path << " loaded." << std::endl;
 }
 
-void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, int nFaces, glm::mat4 viewport) {
+void cl_renderer::setMVP(glm::mat4 model, glm::mat4 view, glm::mat4 proj) {
+    auto viewDirHomo = view * glm::vec4(0,0,1,1);
+    viewDir = glm::vec3(viewDirHomo);
+    glm::mat4 mvp = proj * view * model;
+    queue.enqueueWriteBuffer(buffer_mvp, true, 0, 16 * sizeof(float), glm::value_ptr(mvp));
+    queue.enqueueWriteBuffer(buffer_modelMat, true, 0, 16 * sizeof(float), glm::value_ptr(model));
+}
+
+void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std::vector<float> normals, int nFaces, glm::mat4 viewport, unsigned char* screen, GLuint screenTex, float* zBuffer, int width, int height) {
     try {
+        numFaces = nFaces;
+        numVerts = verts.size() / 3;
+        numPixels = width * height;
+        
+        this->width = width;
+        this->height = height;
+        this->screen = screen;
+        this->screenTex = screenTex;
+        
+        clearColorData = new unsigned char[numPixels * 3];
+        std::fill_n(clearColorData, numPixels * 3, 0);
+        clearDepthData = new float[numPixels];
+        std::fill_n(clearDepthData, numPixels, std::numeric_limits<float>::min());
+
+        buffer_mvp = cl::Buffer(context, CL_MEM_READ_ONLY, 16 * sizeof(float));
+        
+        buffer_modelMat = cl::Buffer(context, CL_MEM_READ_ONLY, 16 * sizeof(float));
+        
         buffer_viewport = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
             16 * sizeof(float), glm::value_ptr(viewport));
         
         buffer_verts = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
             verts.size() * sizeof(float), verts.data());
         
+        buffer_vertOut = cl::Buffer(context, CL_MEM_READ_WRITE, 4 * numVerts * sizeof(float));
+        
+        buffer_normals = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, normals.size() * sizeof(float), normals.data());
+        
+        buffer_normalsVertOut = cl::Buffer(context, CL_MEM_READ_WRITE, 3 * numVerts * sizeof(float));
+        
+        buffer_normalsRastOut = cl::Buffer(context, CL_MEM_READ_WRITE, width * height * 3 * sizeof(float));
+        
         buffer_inds = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
             inds.size() * sizeof(int), inds.data());
         
+        buffer_z = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            width * height * sizeof(float), zBuffer);
+        
+        buffer_screen = cl::Buffer(context, CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR,
+            width * height * 3 * sizeof(unsigned char), screen);
+        
+//        texMemory = cl::ImageGL(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, screenTex,NULL);
+//        
+//        texMemory = clCreateFromGLTexture(context, CL_MEM_WRITE_ONLY, (cl_GLenum)GL_TEXTURE_2D, (cl_GLint)0,(cl_GLint)screenTex,NULL);
+
        
-        workSize = nFaces;
     } catch(const cl::Error &err) {
         std::cerr
         << "OpenCL error: "
@@ -148,45 +180,50 @@ void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, int 
     }
 }
 
+void cl_renderer::clear() {
+    queue.enqueueWriteBuffer(buffer_screen, true, 0, numPixels * 3 * sizeof(unsigned char), clearColorData);
+    queue.enqueueWriteBuffer(buffer_z, true, 0, numPixels * sizeof(float), clearDepthData);
+}
 
-void cl_renderer::runProgram(std::vector<int> inds, std::vector<float> verts, int nFaces, glm::mat4 viewport, unsigned char* screen, float* zBuffer, int width, int height) {
+void cl_renderer::runProgram() {
     
-    try{
-//        cl::Buffer buffer_viewport(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-//            16 * sizeof(float), glm::value_ptr(viewport));
-//
-//        cl::Buffer buffer_verts(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-//            verts.size() * sizeof(float), verts.data());
-//
-//        cl::Buffer buffer_inds(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-//            inds.size() * sizeof(int), inds.data());
+    try {
+        int i = 0;
+        vertexShader.setArg(i++, static_cast<cl_ulong>(numVerts));
+        vertexShader.setArg(i++, buffer_mvp);
+        vertexShader.setArg(i++, buffer_modelMat);
+        vertexShader.setArg(i++, buffer_verts);
+        vertexShader.setArg(i++, buffer_normals);
+        vertexShader.setArg(i++, buffer_vertOut);
+        vertexShader.setArg(i++, buffer_normalsVertOut);
         
+        queue.enqueueNDRangeKernel(vertexShader, cl::NullRange, numVerts, cl::NullRange);
         
+        i=0;
+        rasterizer.setArg(i++, static_cast<cl_ulong>(numFaces));
+        rasterizer.setArg(i++, static_cast<cl_int>(width));
+        rasterizer.setArg(i++, static_cast<cl_int>(height));
+        rasterizer.setArg(i++, offset);
+        rasterizer.setArg(i++, buffer_z);
+        rasterizer.setArg(i++, buffer_viewport);
+        rasterizer.setArg(i++, buffer_vertOut);
+        rasterizer.setArg(i++, buffer_normalsVertOut);
+        rasterizer.setArg(i++, buffer_inds);
+        rasterizer.setArg(i++, buffer_screen);
+        rasterizer.setArg(i++, buffer_normalsRastOut);
         
-
-        cl::Buffer buffer_z(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            width * height * sizeof(float), zBuffer);
+        queue.enqueueNDRangeKernel(rasterizer, cl::NullRange, numFaces, cl::NullRange);
         
-        cl::Buffer buffer_screen(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            width * height * 3 * sizeof(unsigned char), screen);
+        i=0;
+        fragmentShader.setArg(i++, static_cast<cl_int>(width));
+        fragmentShader.setArg(i++, static_cast<cl_int>(height));
+        fragmentShader.setArg(i++, glm::value_ptr(viewDir));
+        fragmentShader.setArg(i++, buffer_z);
+        fragmentShader.setArg(i++, buffer_normalsRastOut);
+        fragmentShader.setArg(i++, buffer_screen);
         
-        kernel.setArg(0, static_cast<cl_ulong>(nFaces));
-        kernel.setArg(1, static_cast<cl_int>(width));
-        kernel.setArg(2, static_cast<cl_int>(height));
-        kernel.setArg(3, buffer_z);
-        kernel.setArg(0, static_cast<cl_ulong>(nFaces));
-        kernel.setArg(4, buffer_viewport);
-        kernel.setArg(5, buffer_verts);
-        kernel.setArg(6, buffer_inds);
-//        kernel.setArg(4, buffer_viewport);
-//        kernel.setArg(5, buffer_verts);
-//        kernel.setArg(6, buffer_inds);
-        kernel.setArg(7, buffer_screen);
+        queue.enqueueNDRangeKernel(fragmentShader, cl::NullRange, numPixels, cl::NullRange);
         
-        // Launch kernel on the compute device.
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, nFaces, cl::NullRange);
-        
-        // Get result back to host.
         queue.enqueueReadBuffer(buffer_screen, CL_TRUE, 0, width * height * 3 * sizeof(unsigned char), screen);
     } catch(const cl::Error &err) {
         std::cerr

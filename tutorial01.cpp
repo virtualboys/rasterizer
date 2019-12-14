@@ -44,8 +44,8 @@ using namespace glm;
 
 Model *model        = NULL;
 
-const int width  = 1080;
-const int height = 720;
+const int width  = 1000;
+const int height = 1000;
 
 Vec3f light_dir(1,1,1);
 Vec3f       eye(1,1,3);
@@ -288,54 +288,43 @@ int main( int argc, char** argv )
 	// Create a buffer
 	unsigned char * data = new unsigned char [imageSize];
 
-		// Create one OpenGL texture
-		GLuint textureID;
-		glGenTextures(1, &textureID);
-		// Return the ID of the texture we just created
-		GLuint Texture = textureID;
-		
-		// Get a handle for our "myTextureSampler" uniform
-		GLuint TextureID  = glGetUniformLocation(programID, "myTextureSampler");
-
-		
-		// "Bind" the newly created texture : all future texture functions will modify this texture
-		glBindTexture(GL_TEXTURE_2D, textureID);
-
-		// Give the image to OpenGL
-		glTexImage2D(GL_TEXTURE_2D, 0,GL_RGB, width, height, 0, GL_BGR, GL_UNSIGNED_BYTE, data);
-
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-
-		float *zbuffer = new float[width*height];
-
-	    TGAImage frame(width, height, TGAImage::RGB);
-	    lookat(eye, center, up);
-	    viewport(width/8, height/8, width*3/4, height*3/4);
-	    projection(-1.f/(eye-center).norm());
-	    light_dir = proj<3>((Projection*ModelView*embed<4>(light_dir, 0.f))).normalize();
-
-        model = new Model(argv[1]);
-		Shader shader;
-
-       
-
-		// OpenGL has now copied the data. Free our own version
-		
-
-		// Poor filtering, or ...
-		//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
-
-		// ... nice trilinear filtering ...
+    // Create one OpenGL texture
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    // Return the ID of the texture we just created
+    GLuint Texture = textureID;
     
+    // Get a handle for our "myTextureSampler" uniform
+    GLuint texUniformLoc  = glGetUniformLocation(programID, "myTextureSampler");
+
+    
+    // "Bind" the newly created texture : all future texture functions will modify this texture
+    glBindTexture(GL_TEXTURE_2D, textureID);
+
+    // Give the image to OpenGL
+    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+//    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0,GL_RGB, width, height, 0, GL_BGR, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    float *zbuffer = new float[width*height];
+
+    TGAImage frame(width, height, TGAImage::RGB);
+    lookat(eye, center, up);
+    viewport(width/8, height/8, width*3/4, height*3/4);
+    projection(-1.f/(eye-center).norm());
+    light_dir = proj<3>((Projection*ModelView*embed<4>(light_dir, 0.f))).normalize();
+
+    model = new Model(argv[1]);
+    Shader shader;
     
     //int fd = init_serial();
     //init_port(&fd,9600);                  //set serial port to 9600,8,n,1
-    
     
     cl_renderer clRend;
     size_t N = width * height * 3;
@@ -362,21 +351,47 @@ int main( int argc, char** argv )
     viewportMat[1][1] = height/2.f;
     viewportMat[2][2] = 0;
     
-    clRend.loadData(model->faces_2, model->verts_2, model->nfaces(), viewportMat);
+    glm::mat4 modelMat;
+    glm::mat4 viewMat;
+    viewMat = glm::translate(viewMat, vec3(0,0,-5));
+    glm::mat4 projMat = glm::perspective(45.0f, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
+    
+    modelMat = glm::translate(modelMat, vec3(0,0,2));
     
     for(i = 0; i < width*height; i++) {
         zbuffer[i] = std::numeric_limits<float>::min();
     }
     
-//    clRend.runProgram(indData, vertData, 1, viewportMat, data, zbuffer, width, height);
-//    clRend.runProgram( data, zbuffer, width, height);
+    clRend.loadData(model->faces_2, model->verts_2, model->normals_2, model->nfaces(), viewportMat, data, textureID, zbuffer, width, height);
     
 	bool increasing = false;
 	double previousTime = glfwGetTime();
 	int frameCount = 0;
+    float rotSpeed = .01f;
+    float offset = 0;
+    float offsetSpeed = .01f;
+    float maxOffset = 3.0f;
+    bool offsetUp = true;
 
 	do{
-            clRend.runProgram(model->faces_2, model->verts_2, model->nfaces(), viewportMat, data, zbuffer, width, height);
+        modelMat = glm::rotate(modelMat, rotSpeed * 2.0f * glm::pi<float>(), glm::vec3(0,1,0));
+        if(offsetUp) {
+            offset += offsetSpeed;
+            if(offset > maxOffset) {
+                offsetUp = false;
+            }
+        } else {
+            offset -= offsetSpeed;
+            if(offset < -maxOffset) {
+                offsetUp = true;
+            }
+        }
+        std::cout<< "offset: " << offset <<std::endl;
+        clRend.offset = offset;
+        
+        clRend.clear();
+        clRend.setMVP(modelMat, viewMat, projMat);
+        clRend.runProgram();
 //        std::cout << readArduinoVal(fd) <<std::endl;
         
 		frameCount++;
@@ -441,7 +456,7 @@ int main( int argc, char** argv )
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, Texture);
 		// Set our "myTextureSampler" sampler to use Texture Unit 0
-		glUniform1i(TextureID, 0);
+		glUniform1i(texUniformLoc, 0);
 
 		// 1rst attribute buffer : vertices
 		glEnableVertexAttribArray(0);

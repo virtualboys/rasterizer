@@ -53,6 +53,18 @@ Model::Model(const char *filename) : verts_(), faces_(), faces_2(), verts_2(), n
             faces_2.push_back(f[2][2]);
         }
     }
+    
+    normals_2 = std::vector<float>(verts_2.size());
+    for(int i = 0; i < faces_.size(); i++) {
+        for(int j = 0; j < 3; j++) {
+            int ind =faces_[i][j][0];
+            Vec3f n = norms_[faces_[i][j][2]];
+            normals_2[ind * 3] = n.x;
+            normals_2[ind * 3+1] = n.y;
+            normals_2[ind * 3+2] = n.z;
+        }
+    }
+    
     std::cerr << "# v# " << verts_.size() << " f# "  << faces_.size() << " vt# " << uv_.size() << " vn# " << norms_.size() << std::endl;
     load_texture(filename, "_diffuse.tga", diffusemap_);
     load_texture(filename, "_nm_tangent.tga",      normalmap_);

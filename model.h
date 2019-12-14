@@ -31,6 +31,7 @@ public:
     std::vector<float> verts_2;
     std::vector<std::vector<Vec3i> > faces_; // attention, this Vec3i means vertex/uv/normal
     std::vector<int> faces_2;
+    std::vector<float> normals_2;
 };
 #endif //__MODEL_H__
 

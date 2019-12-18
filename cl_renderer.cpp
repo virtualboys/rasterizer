@@ -18,7 +18,7 @@ cl_renderer::~cl_renderer() {
     
 }
 
-bool cl_renderer::init(size_t size) {
+bool cl_renderer::init(size_t tileSize) {
     try {
         // Get list of OpenCL platforms.
         std::vector<cl::Platform> platform;
@@ -67,7 +67,7 @@ bool cl_renderer::init(size_t size) {
 //            std::cerr<<"Device interop not supported"<<std::endl;
 //        }
         
-        numFaces = size;
+        this->tileSize = tileSize;
         
         return true;
         
@@ -124,7 +124,7 @@ void cl_renderer::setMVP(glm::mat4 model, glm::mat4 view, glm::mat4 proj) {
     queue.enqueueWriteBuffer(buffer_modelMat, true, 0, 16 * sizeof(float), glm::value_ptr(model));
 }
 
-void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std::vector<float> normals, int nFaces, glm::mat4 viewport, unsigned char* screen, GLuint screenTex, float* zBuffer, int width, int height) {
+void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std::vector<float> normals, std::vector<float> uvs, TGAImage& tex, int nFaces, glm::mat4 viewport, unsigned char* screen, GLuint screenTex, float* zBuffer, int width, int height) {
     try {
         numFaces = nFaces;
         numVerts = verts.size() / 3;
@@ -158,6 +158,10 @@ void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std:
         
         buffer_normalsRastOut = cl::Buffer(context, CL_MEM_READ_WRITE, width * height * 3 * sizeof(float));
         
+        buffer_uvs = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, uvs.size() * sizeof(float), uvs.data());
+        
+        buffer_uvsRastOut = cl::Buffer(context, CL_MEM_READ_WRITE, width * height * 2 * sizeof(float));
+        
         buffer_inds = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
             inds.size() * sizeof(int), inds.data());
         
@@ -166,6 +170,8 @@ void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std:
         
         buffer_screen = cl::Buffer(context, CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR,
             width * height * 3 * sizeof(unsigned char), screen);
+        
+        buffer_tex = cl::Image2D(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, cl::ImageFormat(CL_RGB, CL_SNORM_INT8), tex.get_width(), tex.get_height(), 0, (void*)tex.buffer());
         
 //        texMemory = cl::ImageGL(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, screenTex,NULL);
 //        
@@ -190,6 +196,7 @@ void cl_renderer::runProgram() {
     try {
         int i = 0;
         vertexShader.setArg(i++, static_cast<cl_ulong>(numVerts));
+        vertexShader.setArg(i++, offsetVert);
         vertexShader.setArg(i++, buffer_mvp);
         vertexShader.setArg(i++, buffer_modelMat);
         vertexShader.setArg(i++, buffer_verts);
@@ -203,23 +210,28 @@ void cl_renderer::runProgram() {
         rasterizer.setArg(i++, static_cast<cl_ulong>(numFaces));
         rasterizer.setArg(i++, static_cast<cl_int>(width));
         rasterizer.setArg(i++, static_cast<cl_int>(height));
-        rasterizer.setArg(i++, offset);
+        rasterizer.setArg(i++, offsetRast);
         rasterizer.setArg(i++, buffer_z);
         rasterizer.setArg(i++, buffer_viewport);
         rasterizer.setArg(i++, buffer_vertOut);
         rasterizer.setArg(i++, buffer_normalsVertOut);
+        rasterizer.setArg(i++, buffer_uvs);
         rasterizer.setArg(i++, buffer_inds);
         rasterizer.setArg(i++, buffer_screen);
         rasterizer.setArg(i++, buffer_normalsRastOut);
+        rasterizer.setArg(i++, buffer_uvsRastOut);
         
         queue.enqueueNDRangeKernel(rasterizer, cl::NullRange, numFaces, cl::NullRange);
         
         i=0;
         fragmentShader.setArg(i++, static_cast<cl_int>(width));
         fragmentShader.setArg(i++, static_cast<cl_int>(height));
+        fragmentShader.setArg(i++, offsetFrag);
         fragmentShader.setArg(i++, glm::value_ptr(viewDir));
         fragmentShader.setArg(i++, buffer_z);
         fragmentShader.setArg(i++, buffer_normalsRastOut);
+        fragmentShader.setArg(i++, buffer_uvsRastOut);
+        fragmentShader.setArg(i++, buffer_tex);
         fragmentShader.setArg(i++, buffer_screen);
         
         queue.enqueueNDRangeKernel(fragmentShader, cl::NullRange, numPixels, cl::NullRange);

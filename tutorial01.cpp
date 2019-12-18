@@ -30,6 +30,7 @@ GLFWwindow* window;
 #include "model.h"
 #include "geometry.h"
 #include "our_gl.h"
+#include "offsetAnimator.hpp"
 
 #include "cl_renderer.hpp"
 
@@ -44,8 +45,8 @@ using namespace glm;
 
 Model *model        = NULL;
 
-const int width  = 1000;
-const int height = 1000;
+const int width  = 1080;
+const int height = 800;
 
 Vec3f light_dir(1,1,1);
 Vec3f       eye(1,1,3);
@@ -129,7 +130,8 @@ void init_port(int *fd, unsigned int baud)
 int init_serial() {
     std::cout<<"OK HERE"<<std::endl;
     int fd;
-    fd = open("/dev/tty.usbmodem14201", O_RDWR | O_NOCTTY | O_NDELAY); // List usbSerial devices using Terminal ls /dev/tty.*
+//    fd = open("/dev/tty.usbmodem14201", O_RDWR | O_NOCTTY | O_NDELAY); // List usbSerial devices using Terminal ls /dev/tty.*
+    fd = open("/dev/tty.usbmodem14101", O_RDWR | O_NOCTTY | O_NDELAY);
      
     if(fd == -1) {                        // Check for port errors
            std::cout << fd;
@@ -141,7 +143,7 @@ int init_serial() {
     return fd;
 }
 
-int readArduinoVal(int fd) {
+float readArduinoVal(int fd) {
     char buffer[100];
 
     if(fd == -1) {
@@ -171,7 +173,8 @@ int readArduinoVal(int fd) {
                 while(buffer[ind--] != 'X') { }
                 std::string sVal = std::string(&buffer[ind+2]);
                 int val = std::stoi(sVal);
-                return val;
+                float res = val / (500.0f);
+                return res;
             }
         }
     }
@@ -249,8 +252,6 @@ int main( int argc, char** argv )
 	// Our ModelViewProjection : multiplication of our 3 matrices
 	glm::mat4 MVP        = GLMProjection * GLMView * GLMModel; // Remember, matrix multiplication is the other way around
 
-	
-
 	// Our vertices. Tree consecutive floats give a 3D vertex; Three consecutive vertices give a triangle.
 	// A cube has 6 faces with 2 triangles each, so this makes 6*2=12 triangles, and 12*3 vertices
 	static const GLfloat g_vertex_buffer_data[] = { 
@@ -323,25 +324,13 @@ int main( int argc, char** argv )
     model = new Model(argv[1]);
     Shader shader;
     
-    //int fd = init_serial();
-    //init_port(&fd,9600);                  //set serial port to 9600,8,n,1
+//    int fd = init_serial();
+//    init_port(&fd,9600);                  //set serial port to 9600,8,n,1
     
     cl_renderer clRend;
     size_t N = width * height * 3;
     clRend.init(N);
     clRend.loadProgram("../tutorial01_first_window/testProg.cl");
-    
-    int i = 0;
-    std::vector<float> vertData(9);
-    vertData[i++] = .7f; vertData[i++] = 1; vertData[i++] = .5f;
-    vertData[i++] = .3f; vertData[i++] = 0; vertData[i++] = .5f;
-    vertData[i++] = 0; vertData[i++] = 0; vertData[i++] = .5f;
-    
-    i=0;
-    std::vector<int> indData(9);
-    indData[i++] = 0; indData[i++] = 0; indData[i++] = 0;
-    indData[i++] = 1; indData[i++] = 1; indData[i++] = 1;
-    indData[i++] = 2; indData[i++] = 2; indData[i++] = 2;
     
     glm::mat4 viewportMat;
     viewportMat[3][0] = width/2.f;
@@ -353,46 +342,53 @@ int main( int argc, char** argv )
     
     glm::mat4 modelMat;
     glm::mat4 viewMat;
-    viewMat = glm::translate(viewMat, vec3(0,0,-5));
+    viewMat = glm::translate(viewMat, vec3(0,0,-2));
     glm::mat4 projMat = glm::perspective(45.0f, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
     
-    modelMat = glm::translate(modelMat, vec3(0,0,2));
+    modelMat = glm::translate(modelMat, vec3(0,0,1));
     
-    for(i = 0; i < width*height; i++) {
+    for(int i = 0; i < width*height; i++) {
         zbuffer[i] = std::numeric_limits<float>::min();
     }
     
-    clRend.loadData(model->faces_2, model->verts_2, model->normals_2, model->nfaces(), viewportMat, data, textureID, zbuffer, width, height);
+    clRend.loadData(model->faces_2, model->verts_2, model->normals_2, model->uvs_2, model->diffusemap_, model->nfaces(), viewportMat, data, textureID, zbuffer, width, height);
+    //clRend.offset = 0;
     
 	bool increasing = false;
 	double previousTime = glfwGetTime();
 	int frameCount = 0;
+    
+    offsetAnimator vertAnim(.02f, -.04, .04);
+    offsetAnimator rastAnim(.001f, -2, 2);
+    offsetAnimator fragAnim(.003f, -5, 5);
+    offsetAnimator projAnim(.0001f, -3, 3);
+    
     float rotSpeed = .01f;
-    float offset = 0;
-    float offsetSpeed = .01f;
-    float maxOffset = 3.0f;
-    bool offsetUp = true;
 
 	do{
-        modelMat = glm::rotate(modelMat, rotSpeed * 2.0f * glm::pi<float>(), glm::vec3(0,1,0));
-        if(offsetUp) {
-            offset += offsetSpeed;
-            if(offset > maxOffset) {
-                offsetUp = false;
-            }
-        } else {
-            offset -= offsetSpeed;
-            if(offset < -maxOffset) {
-                offsetUp = true;
-            }
-        }
-        std::cout<< "offset: " << offset <<std::endl;
-        clRend.offset = offset;
+//        float val = readArduinoVal(fd);
+//        offset = 3.0f * (val -.5f);
+        modelMat = glm::rotate(modelMat,  rotSpeed * 2.0f * glm::pi<float>(), glm::vec3(0,1,0));
+
+        vertAnim.update();
+        rastAnim.update();
+        fragAnim.update();
+        projAnim.update();
+        
+        //projMat = glm::perspective(projAnim.getVal() * 45.0f, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
+        
+        std::cout << "valvert" << vertAnim.getVal() << std::endl;
+        std::cout << "valrast" << rastAnim.getVal() << std::endl;
+        std::cout << "valfrag" << fragAnim.getVal() << std::endl;
+//        std::cout<< "offset: " << offset <<std::endl;
+        clRend.offsetVert = vertAnim.getVal();
+        clRend.offsetRast = rastAnim.getVal();
+        clRend.offsetFrag = fragAnim.getVal();
         
         clRend.clear();
         clRend.setMVP(modelMat, viewMat, projMat);
         clRend.runProgram();
-//        std::cout << readArduinoVal(fd) <<std::endl;
+//        std::cout <<"arduino val: " << val <<std::endl;
         
 		frameCount++;
 		double newTime = glfwGetTime();

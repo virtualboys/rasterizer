@@ -132,19 +132,21 @@ int init_serial() {
     int fd;
 //    fd = open("/dev/tty.usbmodem14201", O_RDWR | O_NOCTTY | O_NDELAY); // List usbSerial devices using Terminal ls /dev/tty.*
     fd = open("/dev/tty.usbmodem14101", O_RDWR | O_NOCTTY | O_NDELAY);
-     
     if(fd == -1) {                        // Check for port errors
+        fd = open("/dev/tty.usbmodem14201", O_RDWR | O_NOCTTY | O_NDELAY); // List usbSerial devices using
+        if(fd == -1) {
            std::cout << fd;
            perror("Unable to open serial port\n");
            return (0);
+        }
      }
      
      std::cout << "Serial Port is open\n";
     return fd;
 }
 
-float readArduinoVal(int fd) {
-    char buffer[100];
+int readArduinoVal(int fd, float* vals, int numVals) {
+    char buffer[150];
 
     if(fd == -1) {
         std::cout<<"CLOSED!!"<<std::endl;
@@ -164,21 +166,38 @@ float readArduinoVal(int fd) {
     else
     {
         buffer[length] = '\0';
-        int ind = length-1;
-        int endInd;
-        while(ind > 0) {
-            if(buffer[ind--] =='X') {
-                endInd = ind;
-                ind--;
-                while(buffer[ind--] != 'X') { }
-                std::string sVal = std::string(&buffer[ind+2]);
-                int val = std::stoi(sVal);
-                float res = val / (500.0f);
-                return res;
-            }
+        
+        std::string sBuf = std::string(buffer);
+        int endInd = sBuf.find_last_of('X');
+        if(endInd == -1) {
+            return -1;
         }
+        
+        sBuf = sBuf.substr(0, endInd);
+        int startInd = sBuf.find_last_of('X');
+        if(startInd == -1) {
+            return -1;
+        }
+        
+        sBuf = sBuf.substr(startInd+1, endInd - startInd);
+        sBuf += 'Y';
+        
+        for(int i = 0; i < numVals; i++) {
+            int ind = sBuf.find_first_of('Y');
+            if(ind == -1) {
+                return -1;
+            }
+            std::string sVal = sBuf.substr(0,ind);
+            int iVal = std::stoi(sVal);
+            vals[i] = 1.0f - (iVal / 500.0f);
+            
+            std::cout<<"val" << i <<": " << vals[i] << ", ";
+            sBuf = sBuf.substr(ind+1);
+        }
+        
+        std::cout << std::endl;
+        return 1;
     }
-    return -1;
 }
 
 int main( int argc, char** argv )
@@ -324,8 +343,10 @@ int main( int argc, char** argv )
     model = new Model(argv[1]);
     Shader shader;
     
-//    int fd = init_serial();
-//    init_port(&fd,9600);                  //set serial port to 9600,8,n,1
+    int fd = init_serial();
+    if(fd != 0) {
+        init_port(&fd,9600);                  //set serial port to 9600,8,n,1
+    }
     
     cl_renderer clRend;
     size_t N = width * height * 3;
@@ -364,31 +385,49 @@ int main( int argc, char** argv )
     offsetAnimator projAnim(.0001f, -3, 3);
     
     float rotSpeed = .01f;
+    
+    int numVals = 3;
+    float* arduinoVals = new float[numVals];
 
 	do{
-//        float val = readArduinoVal(fd);
-//        offset = 3.0f * (val -.5f);
-        modelMat = glm::rotate(modelMat,  rotSpeed * 2.0f * glm::pi<float>(), glm::vec3(0,1,0));
+        if(fd != 0) {
+            if(readArduinoVal(fd, arduinoVals, numVals) != -1) {
+                vertAnim.setD(arduinoVals[0]);
+                rastAnim.setD(arduinoVals[1]);
+                fragAnim.setD(arduinoVals[2]);
+                projAnim.setD(arduinoVals[0]);
+            } else {
+                std::cout<<"could not read val" <<std::endl;
+            }
 
-        vertAnim.update();
-        rastAnim.update();
-        fragAnim.update();
-        projAnim.update();
+        } else {
+            vertAnim.update();
+            rastAnim.update();
+            fragAnim.update();
+            projAnim.update();
+        }
         
-        //projMat = glm::perspective(projAnim.getVal() * 45.0f, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
-        
-        std::cout << "valvert" << vertAnim.getVal() << std::endl;
-        std::cout << "valrast" << rastAnim.getVal() << std::endl;
-        std::cout << "valfrag" << fragAnim.getVal() << std::endl;
-//        std::cout<< "offset: " << offset <<std::endl;
         clRend.offsetVert = vertAnim.getVal();
         clRend.offsetRast = rastAnim.getVal();
         clRend.offsetFrag = fragAnim.getVal();
         
+//        offset = 3.0f * (val -.5f);
+        modelMat = glm::rotate(modelMat,  rotSpeed * 2.0f * glm::pi<float>(), glm::vec3(0,1,0));
+
+       
+        
+        projMat = glm::perspective(projAnim.getVal() * 45.0f, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
+        
+//        std::cout << "valvert" << vertAnim.getVal() << std::endl;
+//        std::cout << "valrast" << rastAnim.getVal() << std::endl;
+//        std::cout << "valfrag" << fragAnim.getVal() << std::endl;
+//        std::cout<< "offset: " << offset <<std::endl;
+
+
+        
         clRend.clear();
         clRend.setMVP(modelMat, viewMat, projMat);
         clRend.runProgram();
-//        std::cout <<"arduino val: " << val <<std::endl;
         
 		frameCount++;
 		double newTime = glfwGetTime();

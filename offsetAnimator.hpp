@@ -7,6 +7,7 @@ public:
     offsetAnimator(float speed, float min, float max);
     
     float getVal();
+    void setD(float d);
     void update();
 private:
     float speed;

@@ -26,3 +26,7 @@ void offsetAnimator::update() {
 float offsetAnimator::getVal() {
     return val;
 }
+
+void offsetAnimator::setD(float d) {
+    this->val = min + d * (max - min);
+}

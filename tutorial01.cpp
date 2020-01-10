@@ -380,9 +380,9 @@ int main( int argc, char** argv )
 	int frameCount = 0;
     
     offsetAnimator vertAnim(.02f, -.04, .04);
-    offsetAnimator rastAnim(.001f, -2, 2);
-    offsetAnimator fragAnim(.003f, -5, 5);
-    offsetAnimator projAnim(.0001f, -3, 3);
+    offsetAnimator rastAnim(.001f, -4, 4);
+    offsetAnimator fragAnim(.003f, -8, 8);
+    offsetAnimator projAnim(.0002f, 0, 1);
     
     float rotSpeed = .01f;
     
@@ -416,7 +416,7 @@ int main( int argc, char** argv )
 
        
         
-        projMat = glm::perspective(projAnim.getVal() * 45.0f, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
+        //projMat = glm::perspective(projAnim.getVal() * 45, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
         
 //        std::cout << "valvert" << vertAnim.getVal() << std::endl;
 //        std::cout << "valrast" << rastAnim.getVal() << std::endl;

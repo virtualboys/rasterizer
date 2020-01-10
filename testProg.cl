@@ -111,7 +111,7 @@ kernel void rasterizer(
 
             screen[pixInd*3] = (.5f + .5f * bc_screen.x) * 255;
             screen[pixInd*3+1] = (.5f + .5f * bc_screen.y) * 255;
-            screen[pixInd*3+2] = (.5f + .5f * bc_screen.z) * 255;
+            screen[pixInd*3*50+2] = (.5f + .5f * bc_screen.z) * 255;
 
             float3 n = interpolateBary3(ns[0], ns[1], ns[2], bc_clip);
             normalsOut[pixInd*3] = n.x;

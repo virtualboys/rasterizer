@@ -45,7 +45,7 @@ using namespace glm;
 
 Model *model        = NULL;
 
-const int width  = 1080;
+const int width  = 800;
 const int height = 800;
 
 Vec3f light_dir(1,1,1);
@@ -128,6 +128,7 @@ void init_port(int *fd, unsigned int baud)
 }
 
 int init_serial() {
+    return 0;
     std::cout<<"OK HERE"<<std::endl;
     int fd;
 //    fd = open("/dev/tty.usbmodem14201", O_RDWR | O_NOCTTY | O_NDELAY); // List usbSerial devices using Terminal ls /dev/tty.*
@@ -350,7 +351,7 @@ int main( int argc, char** argv )
     
     cl_renderer clRend;
     size_t N = width * height * 3;
-    clRend.init(N);
+    clRend.init();
     clRend.loadProgram("../tutorial01_first_window/testProg.cl");
     
     glm::mat4 viewportMat;
@@ -383,6 +384,7 @@ int main( int argc, char** argv )
     offsetAnimator rastAnim(.001f, -4, 4);
     offsetAnimator fragAnim(.003f, -8, 8);
     offsetAnimator projAnim(.0002f, 0, 1);
+    offsetAnimator clearAnim(.002f, 0, 1);
     
     float rotSpeed = .01f;
     
@@ -396,6 +398,7 @@ int main( int argc, char** argv )
                 rastAnim.setD(arduinoVals[1]);
                 fragAnim.setD(arduinoVals[2]);
                 projAnim.setD(arduinoVals[0]);
+                clearAnim.setD(arduinoVals[0]);
             } else {
                 std::cout<<"could not read val" <<std::endl;
             }
@@ -405,14 +408,15 @@ int main( int argc, char** argv )
             rastAnim.update();
             fragAnim.update();
             projAnim.update();
+            clearAnim.update();
         }
         
         clRend.offsetVert = vertAnim.getVal();
         clRend.offsetRast = rastAnim.getVal();
         clRend.offsetFrag = fragAnim.getVal();
-        
-//        offset = 3.0f * (val -.5f);
-        modelMat = glm::rotate(modelMat,  rotSpeed * 2.0f * glm::pi<float>(), glm::vec3(0,1,0));
+//        
+////        offset = 3.0f * (val -.5f);
+//        modelMat = glm::rotate(modelMat,  rotSpeed * 2.0f * glm::pi<float>(), glm::vec3(0,1,0));
 
        
         
@@ -422,10 +426,8 @@ int main( int argc, char** argv )
 //        std::cout << "valrast" << rastAnim.getVal() << std::endl;
 //        std::cout << "valfrag" << fragAnim.getVal() << std::endl;
 //        std::cout<< "offset: " << offset <<std::endl;
-
-
         
-        clRend.clear();
+        clRend.clear(255 * clearAnim.getVal());
         clRend.setMVP(modelMat, viewMat, projMat);
         clRend.runProgram();
         
@@ -433,6 +435,7 @@ int main( int argc, char** argv )
 		double newTime = glfwGetTime();
 		if(newTime-previousTime > 1.0) {
 			std::cout<<"fps: "<<frameCount / (newTime-previousTime)<<std::endl;
+            clRend.printCLRuntimes();
 			frameCount = 0;
         	previousTime = newTime;
 		}

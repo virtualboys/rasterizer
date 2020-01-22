@@ -18,19 +18,25 @@ public:
     float offsetRast;
     float offsetFrag;
     
-    bool init(size_t tileSize);
+    bool init();
     void loadProgram(std::string path);
     void loadData(std::vector<int> inds, std::vector<float> verts, std::vector<float> normals, std::vector<float> uvs, TGAImage& tex, int nFaces, glm::mat4 viewport, unsigned char* screen, GLuint screenTex, float* zBuffer, int width, int height);
     void setMVP(glm::mat4 model, glm::mat4 view, glm::mat4 proj);
-    void clear();
+    void clear(unsigned char val);
     void runProgram();
+    void printCLRuntimes();
     
 private:
-    size_t tileSize;
     
     size_t numFaces;
     size_t numVerts;
     size_t numPixels;
+    size_t numTiles;
+    size_t tilesX;
+    size_t tilesY;
+    
+    const float* modelMat;
+    const float* mvpMat;
     
     unsigned char* clearColorData;
     float* clearDepthData;
@@ -41,9 +47,16 @@ private:
     cl::Program program;
     
     cl::Kernel vertexShader;
+    cl::Kernel tiler;
     cl::Kernel rasterizer;
     cl::Kernel fragmentShader;
     
+    cl::Event vertEvent;
+    cl::Event tileEvent;
+    cl::Event rastEvent;
+    cl::Event fragEvent;
+    
+    cl::Buffer buffer_tilePolys;
     cl::Buffer buffer_mvp;
     cl::Buffer buffer_modelMat;
     cl::Buffer buffer_viewport;
@@ -64,6 +77,8 @@ private:
     int width;
     int height;
     glm::vec3 viewDir;
+    
+    double getEventTime(cl::Event event);
 };
 
 #endif /* cl_renderer_hpp */

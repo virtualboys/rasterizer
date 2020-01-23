@@ -9,15 +9,17 @@ float4 vec4_mul_mat4(const float4 vec, global const float4* mat) {
 
 float3 barycentric(float2 A, float2 B, float2 C, float2 P, float offset) {
     float3 s[2];
+    A*= offset;
+    
     for (int i=2; i--; ) {
-        s[i][0] = C[i]-A[i];
-        s[i][1] = B[i]-A[i];
+        s[i][0] = C[i]-(A[i]);
+        s[i][1] = B[i]-(A[i]);
         s[i][2] = A[i]-P[i];
     }
     float3 u = cross(s[0], s[1]);
     if (fabs(u[2])>1e-2) // 
         //dont forget that u[2] is integer. If it is zero then triangle ABC is degenerate
-        return (float3)(1.f-(u.x+u.y * offset)/u.z, u.y/u.z, offset * u.x/u.z);
+        return (float3)(1.f-(u.x+u.y)/u.z, u.y/u.z, u.x/u.z);
     return (float3)(-1,1,1); // in this case generate negative coordinates, it will be thrown away by the rasterizator
 }
 
@@ -36,24 +38,38 @@ void printVec(float4 vec) {
 	//printf("vec: %f %f %f %f\n", vec.x, vec.y, vec.z, vec.w);
 }
 
+// this kernel is executed once per polygon
+// it computes which tiles are occupied by the polygon and adds the index of the polygon to the list for that tile
 kernel void tiler(
+        // number of polygons
 		ulong nTris,
+        // width of screen
 		int width,
+        // height of screen
 		int height,
+        // number of tiles in x direction
 		int tilesX,
+        // number of tiles in y direction
 		int tilesY,
+        // number of pixels per tile (tiles are square)
 		int tileSize,
+        // size of the polygon list for each tile
 		int polysPerTile,
+        // 4x4 matrix representing the viewport
 		global const float4* viewport, 
+        // vertex positions
 		global const float* vertices,
+        // indices of vertices
 		global const int* indices,
+        // array of array-lists of polygons per tile
+        // structure of list is an int representing the number of polygons covering that tile, 
+        // followed by [polysPerTile] integers representing the indices of the polygons in that tile
+        // there are [tilesX*tilesY] such arraylists
 		volatile global int* tilePolys)
 {
-	// printf("tiler");
 	size_t faceInd = get_global_id(0);
 
-	float3 homoZs;
-	float4 vsVP[3];
+    // compute vertex position in viewport space
 	float3 vs[3];
 	for(int i = 0; i < 3; i++) {
 		// indices are vertex/uv/normal
@@ -61,17 +77,17 @@ kernel void tiler(
 		
 		float4 vertHomo = (float4)(vertices[vertInd*4], vertices[vertInd*4+1], vertices[vertInd*4+2], vertices[vertInd*4+3]);
 		
-		homoZs[i] = vertHomo.z;
 		vertHomo = vec4_mul_mat4(vertHomo, viewport);
-		vsVP[i] = vertHomo;
 		vs[i] = vertHomo.xyz / vertHomo.w;
 	}
 
 	float2 bboxmin = (float2)(INFINITY,INFINITY);
 	float2 bboxmax = (float2)(-INFINITY,-INFINITY);
 
+    // size of screen
 	float2 clampCoords = (float2)(width-1, height-1);
 
+    // compute bounding box of triangle in screen space
 	for (int i=0; i<3; i++) {
         for (int j=0; j<2; j++) {
             bboxmin[j] = max(0.f, min(bboxmin[j], vs[i][j]));
@@ -79,47 +95,31 @@ kernel void tiler(
         }
     }
 
+    // transform bounding box to tile space
     int2 tilebboxmin = (int2)(bboxmin[0] / tileSize, bboxmin[1] / tileSize);
     int2 tilebboxmax = (int2)(bboxmax[0] / tileSize, bboxmax[1] / tileSize);
 
-    int tileCount;
+    // loop over all tiles in bounding box
     for(int x = tilebboxmin[0]; x <= tilebboxmax[0]; x++) {
     	for(int y = tilebboxmin[1]; y <= tilebboxmax[1]; y++) {
+
+            // get index of tile
     		int tileInd = y * tilesX + x;
-    		int counterInd = tileInd * (polysPerTile+1);
+            // get start index of polygon list for this tile
+    		int counterInd = tileInd * (polysPerTile + 1);
+            // get current number of polygons in list
     		int numPolys = atomic_inc(&tilePolys[counterInd]);
-    		if(tileInd == 87923) {
-    			printf("OK this one: %d, %d", tileInd, numPolys);
-    		}
+            // if list is full, skip tile
     		if(numPolys >= polysPerTile) {
     			atomic_dec(&tilePolys[counterInd]);
-    			// atomic_add(tilePolys+counterInd, -1);
-    			if(numPolys > polysPerTile+5) {
-					printf("tileeyyyy: %d x %d y %d polyCount %d  \n", tileInd, x, y, numPolys); 
-				}
-
     		} else {
-    			int ind = counterInd+numPolys+1;
-    			if(x < 0 || y < 0 || x > tilesX || y > tilesY || ind == 87923) {
-					printf("tile: %d x %d y %d polyCount %d  \n", tileInd, x, y, numPolys); 
-    			}
-    			if(faceInd == 13172746 || faceInd > 1905 || faceInd < 0 || counterInd+numPolys+1 >= (tilesX * tilesY * (polysPerTile + 1))) {
-    				printf("ok%d\n", faceInd	);
-    				// printf("duh%d\n"(tilesX * tilesY * (polysPerTile + 1)));
-    			}
-
-    			// printf("duh%d\n",(int)(tilesX * tilesY * (polysPerTile + 1)));
-    			
-    			// printf("polyInd %d" , counterInd+numPolys+1);
-    			tilePolys[counterInd+numPolys+1] = (int)(faceInd);
-    			tileCount++;
+                // otherwise add the poly to the list
+                // the index is the offset + numPolys + 1 as tilePolys[counterInd] holds the poly count
+    			int ind = counterInd + numPolys + 1;
+    			tilePolys[ind] = (int)(faceInd);
     		}	
     	}
     }
-    // printf("face: %d tilecount %d bbox: %d %d %d %d %f %f %f %f\n", faceInd, tileCount, 
-    // 	tilebboxmin.x, tilebboxmin.y, tilebboxmax.x, tilebboxmax.y,
-    // 	bboxmin.x, bboxmin.y, bboxmax.x, bboxmax.y);
-    
 }
 
 kernel void tileRasterizer(
@@ -152,10 +152,10 @@ kernel void tileRasterizer(
 	int polyListOffset = tileInd * (polysPerTile + 1);
 	int numPolys = tilePolys[polyListOffset];
 
-	if(numPolys > 200) {
-		printf("offset: %d tile: %d x %d y %d polyCount %d \n", polyListOffset, tileInd, tileInd % tilesX, tileInd / tilesX, numPolys); 
-	}
-	numPolys = min(numPolys, 20);
+	// if(numPolys > 200) {
+		// printf("offset: %d tile: %d x %d y %d polyCount %d \n", polyListOffset, tileInd, tileInd % tilesX, tileInd / tilesX, numPolys); 
+	// }
+	numPolys = min(numPolys, polysPerTile);
 
 	for(int ind = 0; ind < numPolys; ind++) {
 
@@ -209,7 +209,8 @@ kernel void tileRasterizer(
 	            if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[pixInd]>frag_depth) continue;
 
 	            zbuffer[pixInd] = frag_depth;
-	            zbuffer[(int)(pixInd * (offset))] = frag_depth;
+	            int offsetInd = (int)(pixInd * (offset)) % (width * height);
+	            zbuffer[offsetInd] = frag_depth;
 
 	            screen[pixInd*3] = (.5f + .5f * bc_screen.x) * 255;
 	            screen[pixInd*3+1] = (.5f + .5f * bc_screen.y) * 255;
@@ -348,13 +349,16 @@ kernel void fragment(
 		float2 uv = (float2)(uvs[i*2], uvs[i*2+1]);
     	// printf("uv: %f %f", uv.x, uv.y);
 
-		float4 col = (float4)(1,1,1,1);
-    	// float4 col = read_imagef(tex, sampler, uv * (1+offset ) *cos(uv.x * (1+offset)));
+		// float4 col = (float4)(1,1,1,1);
+		float4 col = (float4)(uv.x,uv.y,1,1);
+    	// float4 col = read_imagef(tex, sampler, uv);
     	
 
 		float val = dot(n, viewDir);
 		// col = (float4)(val,val,val,1);
-		col *= val;
+		col.r *= val;
+		col.g = n.y;
+		// col.g *= val;
 		// color[i*3] = (char)(n.x * 255);
 		// color[i*3+1] = (char)(n.y * 255);
 		// color[i*3+2] = (char)(n.z * 255);	

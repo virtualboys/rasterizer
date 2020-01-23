@@ -128,7 +128,7 @@ void init_port(int *fd, unsigned int baud)
 }
 
 int init_serial() {
-    return 0;
+//    return 0;
     std::cout<<"OK HERE"<<std::endl;
     int fd;
 //    fd = open("/dev/tty.usbmodem14201", O_RDWR | O_NOCTTY | O_NDELAY); // List usbSerial devices using Terminal ls /dev/tty.*
@@ -224,7 +224,8 @@ int main( int argc, char** argv )
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
 	// Open a window and create its OpenGL context
-	window = glfwCreateWindow( width, height, "Tutorial 05 - Textured Cube", NULL, NULL);
+//	window = glfwCreateWindow( width, height, "Tutorial 05 - Textured Cube", NULL, NULL);
+    window = glfwCreateWindow( width, height, "Tutorial 05 - Textured Cube", NULL, NULL);
 	if( window == NULL ){
 		fprintf( stderr, "Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible. Try the 2.1 version of the tutorials.\n" );
 		glfwTerminate();
@@ -350,7 +351,6 @@ int main( int argc, char** argv )
     }
     
     cl_renderer clRend;
-    size_t N = width * height * 3;
     clRend.init();
     clRend.loadProgram("../tutorial01_first_window/testProg.cl");
     
@@ -364,7 +364,7 @@ int main( int argc, char** argv )
     
     glm::mat4 modelMat;
     glm::mat4 viewMat;
-    viewMat = glm::translate(viewMat, vec3(0,0,-2));
+    viewMat = glm::translate(viewMat, vec3(0,0,-3));
     glm::mat4 projMat = glm::perspective(45.0f, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
     
     modelMat = glm::translate(modelMat, vec3(0,0,1));
@@ -380,8 +380,8 @@ int main( int argc, char** argv )
 	double previousTime = glfwGetTime();
 	int frameCount = 0;
     
-    offsetAnimator vertAnim(.02f, -.04, .04);
-    offsetAnimator rastAnim(.001f, -4, 4);
+    offsetAnimator vertAnim(.02f, -.09, .09 );
+    offsetAnimator rastAnim(.001f, -.1f, .1f);
     offsetAnimator fragAnim(.003f, -8, 8);
     offsetAnimator projAnim(.0002f, 0, 1);
     offsetAnimator clearAnim(.002f, 0, 1);
@@ -394,11 +394,11 @@ int main( int argc, char** argv )
 	do{
         if(fd != 0) {
             if(readArduinoVal(fd, arduinoVals, numVals) != -1) {
-                vertAnim.setD(arduinoVals[0]);
-                rastAnim.setD(arduinoVals[1]);
+                vertAnim.setD(arduinoVals[1]);
+                rastAnim.setD(arduinoVals[2]);
                 fragAnim.setD(arduinoVals[2]);
                 projAnim.setD(arduinoVals[0]);
-                clearAnim.setD(arduinoVals[0]);
+                clearAnim.setD(arduinoVals[1]);
             } else {
                 std::cout<<"could not read val" <<std::endl;
             }
@@ -416,14 +416,14 @@ int main( int argc, char** argv )
         clRend.offsetFrag = fragAnim.getVal();
 //        
 ////        offset = 3.0f * (val -.5f);
-//        modelMat = glm::rotate(modelMat,  rotSpeed * 2.0f * glm::pi<float>(), glm::vec3(0,1,0));
+        modelMat = glm::rotate(modelMat,  rotSpeed * 2.0f * glm::pi<float>(), glm::vec3(0,1,0));
 
        
         
-        //projMat = glm::perspective(projAnim.getVal() * 45, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
+        projMat = glm::perspective(projAnim.getVal() * 45, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
         
 //        std::cout << "valvert" << vertAnim.getVal() << std::endl;
-//        std::cout << "valrast" << rastAnim.getVal() << std::endl;
+        std::cout << "valrast" << rastAnim.getVal() << std::endl;
 //        std::cout << "valfrag" << fragAnim.getVal() << std::endl;
 //        std::cout<< "offset: " << offset <<std::endl;
         

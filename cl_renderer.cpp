@@ -12,8 +12,8 @@
 #define __CL_ENABLE_EXCEPTIONS
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
-const int NUM_POLYS_PER_TILE = 10;
-const int TILE_SIZE = 8;
+const int NUM_POLYS_PER_TILE = 5;
+const int TILE_SIZE = 4;
 
 cl_renderer::cl_renderer() {
 //    modelMat = new glm::mat4();
@@ -158,8 +158,7 @@ void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std:
         (NUM_POLYS_PER_TILE + 1) * sizeof(int)<< std::endl;
 
         buffer_mvp = cl::Buffer(context, CL_MEM_READ_WRITE, 16 * sizeof(float));
-        cl::Buffer(context, CL_MEM_READ_WRITE, 4026531843);
-        
+        cl::Buffer(context, CL_MEM_READ_WRITE, 16 * sizeof(float));
         
         buffer_modelMat = cl::Buffer(context, CL_MEM_READ_WRITE, 16 * sizeof(float));
         
@@ -243,7 +242,7 @@ void cl_renderer::clear(unsigned char val) {
     try {
         queue.finish();
     //    queue.enqueueWriteBuffer(buffer_screen, true, 0, numPixels * 3 * sizeof(unsigned char), clearColorData);
-        queue.enqueueFillBuffer<unsigned char>(buffer_screen, val, 0, numPixels * 3 * sizeof(unsigned char), NULL, 0);
+//        queue.enqueueFillBuffer<unsigned char>(buffer_screen, val, 0, numPixels * 3 * sizeof(unsigned char), NULL, 0);
     //    queue.enqueueWriteBuffer(buffer_z, true, 0, numPixels * sizeof(float), clearDepthData);
         queue.enqueueFillBuffer<float>(buffer_z, 0, 0, numPixels * sizeof(float), NULL, 0);
         queue.finish();
@@ -261,8 +260,8 @@ void cl_renderer::runProgram() {
         
         int i = 0;
         vertexShader.setArg(i++, static_cast<cl_ulong>(numVerts));
-//        vertexShader.setArg(i++, offsetVert);
-        vertexShader.setArg(i++, 0);
+        vertexShader.setArg(i++, offsetVert);
+//        vertexShader.setArg(i++, 0);
         vertexShader.setArg(i++, buffer_mvp);
         vertexShader.setArg(i++, buffer_modelMat);
         vertexShader.setArg(i++, buffer_verts);
@@ -275,8 +274,8 @@ void cl_renderer::runProgram() {
         queue.enqueueFillBuffer<int>(buffer_tilePolys, 0, 0, numTiles *
                                      (NUM_POLYS_PER_TILE + 1) * sizeof(int), NULL, 0);
         
-        queue.finish();
-        std::cout<<"done vert"<<std::endl;
+//        queue.finish();
+//        std::cout<<"done vert"<<std::endl;
         
         i=0;
         tiler.setArg(i++, static_cast<cl_ulong>(numFaces));
@@ -292,8 +291,8 @@ void cl_renderer::runProgram() {
         tiler.setArg(i++, buffer_tilePolys);
 
         queue.enqueueNDRangeKernel(tiler, cl::NullRange, numFaces, cl::NullRange, NULL, &tileEvent);
-        queue.finish();
-        std::cout<<"done tiler"<<std::endl;
+//        queue.finish();
+//        std::cout<<"done tiler"<<std::endl;
         
         
         i=0;
@@ -304,8 +303,8 @@ void cl_renderer::runProgram() {
         rasterizer.setArg(i++, static_cast<cl_int>(tilesY));
         rasterizer.setArg(i++, static_cast<cl_int>(TILE_SIZE));
         rasterizer.setArg(i++, static_cast<cl_int>(NUM_POLYS_PER_TILE));
-//        rasterizer.setArg(i++, offsetRast);
-        rasterizer.setArg(i++, 0);
+        rasterizer.setArg(i++, offsetRast);
+//        rasterizer.setArg(i++, 0);
         rasterizer.setArg(i++, buffer_z);
         rasterizer.setArg(i++, buffer_viewport);
         rasterizer.setArg(i++, buffer_vertOut);
@@ -318,14 +317,14 @@ void cl_renderer::runProgram() {
         rasterizer.setArg(i++, buffer_uvsRastOut);
         
         queue.enqueueNDRangeKernel(rasterizer, cl::NullRange, numTiles, cl::NullRange, NULL, &rastEvent);
-        queue.finish();
-        std::cout<<"done rast"<<std::endl;
+//        queue.finish();
+//        std::cout<<"done rast"<<std::endl;
         
         i=0;
         fragmentShader.setArg(i++, static_cast<cl_int>(width));
         fragmentShader.setArg(i++, static_cast<cl_int>(height));
-//        fragmentShader.setArg(i++, offsetFrag);
-        fragmentShader.setArg(i++, 0);
+        fragmentShader.setArg(i++, offsetFrag);
+//        fragmentShader.setArg(i++, 0);
         fragmentShader.setArg(i++, glm::value_ptr(viewDir));
         fragmentShader.setArg(i++, buffer_z);
         fragmentShader.setArg(i++, buffer_normalsRastOut);
@@ -333,9 +332,9 @@ void cl_renderer::runProgram() {
         fragmentShader.setArg(i++, buffer_tex);
         fragmentShader.setArg(i++, buffer_screen);
         
-//        queue.enqueueNDRangeKernel(fragmentShader, cl::NullRange, numPixels, cl::NullRange, NULL, &fragEvent);
+        queue.enqueueNDRangeKernel(fragmentShader, cl::NullRange, numPixels, cl::NullRange, NULL, &fragEvent);
 //
-//        queue.enqueueReadBuffer(buffer_screen, CL_TRUE, 0, width * height * 3 * sizeof(unsigned char), screen);
+        queue.enqueueReadBuffer(buffer_screen, CL_TRUE, 0, width * height * 3 * sizeof(unsigned char), screen);
         
         queue.finish();
         
@@ -349,7 +348,7 @@ void cl_renderer::runProgram() {
 }
 
 double cl_renderer::getEventTime(cl::Event event) {
-    return 0;
+//    return 0;
     cl_ulong time_start;
     cl_ulong time_end;
 
@@ -360,6 +359,6 @@ double cl_renderer::getEventTime(cl::Event event) {
 }
 
 void cl_renderer::printCLRuntimes() {
-    return;
+//    return;
     std::cout<< "times: " << getEventTime(vertEvent) << ", " << getEventTime(tileEvent) << ", " << getEventTime(rastEvent) << ", " << getEventTime(fragEvent) << std::endl;
 }

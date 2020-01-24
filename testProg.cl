@@ -10,7 +10,7 @@ float4 vec4_mul_mat4(const float4 vec, global const float4* mat) {
 float3 barycentric(float2 A, float2 B, float2 C, float2 P, float offset) {
     float3 s[2];
     A*= offset;
-    
+
     for (int i=2; i--; ) {
         s[i][0] = C[i]-(A[i]);
         s[i][1] = B[i]-(A[i]);
@@ -73,9 +73,9 @@ kernel void tiler(
 	float3 vs[3];
 	for(int i = 0; i < 3; i++) {
 		// indices are vertex/uv/normal
-		int vertInd = indices[faceInd*9+i*3];
+		int vertInd = indices[faceInd*9+i*3] * 4;
 		
-		float4 vertHomo = (float4)(vertices[vertInd*4], vertices[vertInd*4+1], vertices[vertInd*4+2], vertices[vertInd*4+3]);
+		float4 vertHomo = (float4)(vertices[vertInd], vertices[vertInd + 1], vertices[vertInd + 2], vertices[vertInd + 3]);
 		
 		vertHomo = vec4_mul_mat4(vertHomo, viewport);
 		vs[i] = vertHomo.xyz / vertHomo.w;

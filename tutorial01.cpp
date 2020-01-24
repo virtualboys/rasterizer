@@ -45,8 +45,8 @@ using namespace glm;
 
 Model *model        = NULL;
 
-const int width  = 800;
-const int height = 800;
+const int width  = 512;
+const int height = 512;
 
 Vec3f light_dir(1,1,1);
 Vec3f       eye(1,1,3);
@@ -423,7 +423,7 @@ int main( int argc, char** argv )
         projMat = glm::perspective(projAnim.getVal() * 45, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
         
 //        std::cout << "valvert" << vertAnim.getVal() << std::endl;
-        std::cout << "valrast" << rastAnim.getVal() << std::endl;
+//        std::cout << "valrast" << rastAnim.getVal() << std::endl;
 //        std::cout << "valfrag" << fragAnim.getVal() << std::endl;
 //        std::cout<< "offset: " << offset <<std::endl;
         

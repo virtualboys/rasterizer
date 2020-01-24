@@ -223,7 +223,7 @@ void cl_renderer::setMVP(glm::mat4 model, glm::mat4 view, glm::mat4 proj) {
         queue.enqueueWriteBuffer(buffer_mvp, true, 0, 16 * sizeof(float), mvpMat);
         queue.enqueueWriteBuffer(buffer_modelMat, true, 0, 16 * sizeof(float), modelMat);
         
-        queue.finish();
+//        queue.finish();
 //        std::cout<<mvp[0][0]<<std::endl;
     } catch(const cl::Error &err) {
         std::cerr
@@ -240,12 +240,12 @@ void cl_renderer::setMVP(glm::mat4 model, glm::mat4 view, glm::mat4 proj) {
 
 void cl_renderer::clear(unsigned char val) {
     try {
-        queue.finish();
+//        queue.finish();
     //    queue.enqueueWriteBuffer(buffer_screen, true, 0, numPixels * 3 * sizeof(unsigned char), clearColorData);
-//        queue.enqueueFillBuffer<unsigned char>(buffer_screen, val, 0, numPixels * 3 * sizeof(unsigned char), NULL, 0);
+        queue.enqueueFillBuffer<unsigned char>(buffer_screen, val, 0, numPixels * 3 * sizeof(unsigned char), NULL, 0);
     //    queue.enqueueWriteBuffer(buffer_z, true, 0, numPixels * sizeof(float), clearDepthData);
         queue.enqueueFillBuffer<float>(buffer_z, 0, 0, numPixels * sizeof(float), NULL, 0);
-        queue.finish();
+//        queue.finish();
     } catch(const cl::Error &err) {
         std::cerr
         << "OpenCL error: "

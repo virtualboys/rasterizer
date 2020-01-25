@@ -12,7 +12,7 @@
 #define __CL_ENABLE_EXCEPTIONS
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
-const int NUM_POLYS_PER_TILE = 5;
+const int NUM_POLYS_PER_TILE = 30;
 const int TILE_SIZE = 4;
 
 cl_renderer::cl_renderer() {
@@ -145,56 +145,56 @@ void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std:
         clearColorData = new unsigned char[numPixels * 3];
         std::fill_n(clearColorData, numPixels * 3, 0);
         clearDepthData = new float[numPixels];
-        std::fill_n(clearDepthData, numPixels, std::numeric_limits<float>::min());
+        std::fill_n(clearDepthData, numPixels, std::numeric_limits<float>::max());
         
         tilesX = width / TILE_SIZE;
         tilesY = height / TILE_SIZE;
         numTiles = tilesX * tilesY;
         
         buffer_tilePolys = cl::Buffer(context, CL_MEM_READ_WRITE, numTiles *
-                                      (NUM_POLYS_PER_TILE + 1) * sizeof(int));
+                                      (NUM_POLYS_PER_TILE + 1) * sizeof(cl_int));
         
         std::cout<< "tilepolys size: " <<numTiles *
-        (NUM_POLYS_PER_TILE + 1) * sizeof(int)<< std::endl;
+        (NUM_POLYS_PER_TILE + 1) * sizeof(cl_int)<< std::endl;
 
-        buffer_mvp = cl::Buffer(context, CL_MEM_READ_WRITE, 16 * sizeof(float));
-        cl::Buffer(context, CL_MEM_READ_WRITE, 16 * sizeof(float));
+        buffer_mvp = cl::Buffer(context, CL_MEM_READ_WRITE, 16 * sizeof(cl_float));
+//        cl::Buffer(context, CL_MEM_READ_WRITE, 16 * sizeof(cl_float));
         
-        buffer_modelMat = cl::Buffer(context, CL_MEM_READ_WRITE, 16 * sizeof(float));
+        buffer_modelMat = cl::Buffer(context, CL_MEM_READ_WRITE, 16 * sizeof(cl_float));
         
         buffer_viewport = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            16 * sizeof(float), glm::value_ptr(viewport));
+            16 * sizeof(cl_float), glm::value_ptr(viewport));
         
         buffer_verts = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            verts.size() * sizeof(float), verts.data());
+            verts.size() * sizeof(cl_float), verts.data());
         
-        std::cout<< "vert size: " <<verts.size() * sizeof(float) << std::endl;
+        std::cout<< "vert size: " <<verts.size() * sizeof(cl_float) << std::endl;
         
-        buffer_vertOut = cl::Buffer(context, CL_MEM_READ_WRITE, 4 * numVerts * sizeof(float));
+        buffer_vertOut = cl::Buffer(context, CL_MEM_READ_WRITE, 4 * numVerts * sizeof(cl_float));
         
-        buffer_normals = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, normals.size() * sizeof(float), normals.data());
+        buffer_normals = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, normals.size() * sizeof(cl_float), normals.data());
         
-        buffer_normalsVertOut = cl::Buffer(context, CL_MEM_READ_WRITE, 3 * numVerts * sizeof(float));
+        buffer_normalsVertOut = cl::Buffer(context, CL_MEM_READ_WRITE, 3 * numVerts * sizeof(cl_float));
         
-        buffer_normalsRastOut = cl::Buffer(context, CL_MEM_READ_WRITE, width * height * 3 * sizeof(float));
+        buffer_normalsRastOut = cl::Buffer(context, CL_MEM_READ_WRITE, width * height * 3 * sizeof(cl_float));
         
-        buffer_uvs = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, uvs.size() * sizeof(float), uvs.data());
+        buffer_uvs = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, uvs.size() * sizeof(cl_float), uvs.data());
         
-        buffer_uvsRastOut = cl::Buffer(context, CL_MEM_READ_WRITE, width * height * 2 * sizeof(float));
+        buffer_uvsRastOut = cl::Buffer(context, CL_MEM_READ_WRITE, width * height * 2 * sizeof(cl_float));
         
         buffer_inds = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            inds.size() * sizeof(int), inds.data());
+            inds.size() * sizeof(cl_int), inds.data());
         
         buffer_z = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            width * height * sizeof(float), zBuffer);
+            width * height * sizeof(cl_float), zBuffer);
         
-        std::cout<< "z size: " <<width * height * sizeof(float)<< std::endl;
+        std::cout<< "z size: " <<width * height * sizeof(cl_float)<< std::endl;
         
         buffer_screen = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            width * height * 3 * sizeof(unsigned char), screen);
+            width * height * 3 * sizeof(cl_uchar), screen);
         
         
-        std::cout<< "screen size: " <<width * height * 3 * sizeof(unsigned char)<< std::endl;
+        std::cout<< "screen size: " <<width * height * 3 * sizeof(cl_uchar)<< std::endl;
         
         buffer_tex = cl::Image2D(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, cl::ImageFormat(CL_RGB, CL_SNORM_INT8), tex.get_width(), tex.get_height(), 0, (void*)tex.buffer());
         
@@ -219,9 +219,9 @@ void cl_renderer::setMVP(glm::mat4 model, glm::mat4 view, glm::mat4 proj) {
         auto mvp = proj * view * model;
         mvpMat = (const float*)glm::value_ptr(mvp);
         modelMat = (const float*)glm::value_ptr(model);
-        queue.finish();
-        queue.enqueueWriteBuffer(buffer_mvp, true, 0, 16 * sizeof(float), mvpMat);
-        queue.enqueueWriteBuffer(buffer_modelMat, true, 0, 16 * sizeof(float), modelMat);
+//        queue.finish();
+        queue.enqueueWriteBuffer(buffer_mvp, true, 0, 16 * sizeof(cl_float), mvpMat);
+        queue.enqueueWriteBuffer(buffer_modelMat, true, 0, 16 * sizeof(cl_float), modelMat);
         
 //        queue.finish();
 //        std::cout<<mvp[0][0]<<std::endl;
@@ -242,9 +242,10 @@ void cl_renderer::clear(unsigned char val) {
     try {
 //        queue.finish();
     //    queue.enqueueWriteBuffer(buffer_screen, true, 0, numPixels * 3 * sizeof(unsigned char), clearColorData);
-        queue.enqueueFillBuffer<unsigned char>(buffer_screen, val, 0, numPixels * 3 * sizeof(unsigned char), NULL, 0);
+        
+        queue.enqueueFillBuffer<cl_uchar>(buffer_screen, val, 0, numPixels * 3 * sizeof(cl_uchar), NULL, 0);
     //    queue.enqueueWriteBuffer(buffer_z, true, 0, numPixels * sizeof(float), clearDepthData);
-        queue.enqueueFillBuffer<float>(buffer_z, 0, 0, numPixels * sizeof(float), NULL, 0);
+        queue.enqueueFillBuffer<cl_float>(buffer_z, 0, 0, numPixels * sizeof(cl_float), NULL, 0);
 //        queue.finish();
     } catch(const cl::Error &err) {
         std::cerr
@@ -271,8 +272,8 @@ void cl_renderer::runProgram() {
 
         queue.enqueueNDRangeKernel(vertexShader, cl::NullRange, numVerts, cl::NullRange, NULL, &vertEvent);
         
-        queue.enqueueFillBuffer<int>(buffer_tilePolys, 0, 0, numTiles *
-                                     (NUM_POLYS_PER_TILE + 1) * sizeof(int), NULL, 0);
+        queue.enqueueFillBuffer<cl_int>(buffer_tilePolys, 0, 0, numTiles *
+                                     (NUM_POLYS_PER_TILE + 1) * sizeof(cl_int), NULL, 0);
         
 //        queue.finish();
 //        std::cout<<"done vert"<<std::endl;
@@ -325,7 +326,7 @@ void cl_renderer::runProgram() {
         fragmentShader.setArg(i++, static_cast<cl_int>(height));
         fragmentShader.setArg(i++, offsetFrag);
 //        fragmentShader.setArg(i++, 0);
-        fragmentShader.setArg(i++, glm::value_ptr(viewDir));
+//        fragmentShader.setArg(i++, glm::value_ptr(viewDir));
         fragmentShader.setArg(i++, buffer_z);
         fragmentShader.setArg(i++, buffer_normalsRastOut);
         fragmentShader.setArg(i++, buffer_uvsRastOut);
@@ -334,7 +335,7 @@ void cl_renderer::runProgram() {
         
         queue.enqueueNDRangeKernel(fragmentShader, cl::NullRange, numPixels, cl::NullRange, NULL, &fragEvent);
 //
-        queue.enqueueReadBuffer(buffer_screen, CL_TRUE, 0, width * height * 3 * sizeof(unsigned char), screen);
+        queue.enqueueReadBuffer(buffer_screen, CL_TRUE, 0, width * height * 3 * sizeof(cl_uchar), screen);
         
         queue.finish();
         
@@ -360,5 +361,5 @@ double cl_renderer::getEventTime(cl::Event event) {
 
 void cl_renderer::printCLRuntimes() {
 //    return;
-    std::cout<< "times: " << getEventTime(vertEvent) << ", " << getEventTime(tileEvent) << ", " << getEventTime(rastEvent) << ", " << getEventTime(fragEvent) << std::endl;
+    std::cout<< "times... vert: " << getEventTime(vertEvent) << ", tiler:" << getEventTime(tileEvent) << ", rast: " << getEventTime(rastEvent) << ", frag: " << getEventTime(fragEvent) << std::endl;
 }

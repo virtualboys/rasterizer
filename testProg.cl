@@ -38,6 +38,40 @@ void printVec(float4 vec) {
 	//printf("vec: %f %f %f %f\n", vec.x, vec.y, vec.z, vec.w);
 }
 
+kernel void vertex(
+		ulong n,
+		float offset,
+		global const float4* mvp, 
+		global const float4* modelMat,
+		global const float* vertices,
+		global const float* normalsIn,
+		global float* positions,
+		global float* normalsOut
+	)
+{
+	// printf("vertex");
+	size_t i = get_global_id(0);
+
+	float4 vert = (float4)(vertices[i*3], vertices[i*3+1], vertices[i*3+2], 1.0f);
+	float4 normal = (float4)(normalsIn[i*3], normalsIn[i*3+1], normalsIn[i*3+2],1.0f);
+
+	normal = vec4_mul_mat4(normal, modelMat);
+	normalize(normal);
+
+	vert = vec4_mul_mat4(vert, mvp);
+
+	vert.xy += (float2)(cos(100 *vert.x), sin(100 * vert.y)) * offset;
+
+	positions[i*4] = vert.x;
+	positions[i*4+1] = vert.y;
+	positions[i*4+2] = vert.z;
+	positions[i*4+3] = vert.w;
+
+	normalsOut[i*3] = normal.x;
+	normalsOut[i*3+1] = normal.y;
+	normalsOut[i*3+2] = normal.z;
+}
+
 // this kernel is executed once per polygon
 // it computes which tiles are occupied by the polygon and adds the index of the polygon to the list for that tile
 kernel void tiler(
@@ -71,13 +105,17 @@ kernel void tiler(
 
     // compute vertex position in viewport space
 	float3 vs[3];
+	float4 vsVP[3];
+
 	for(int i = 0; i < 3; i++) {
 		// indices are vertex/uv/normal
-		int vertInd = indices[faceInd*9+i*3] * 4;
+		int vertInd = indices[faceInd * 9 + i * 3] * 4;
 		
 		float4 vertHomo = (float4)(vertices[vertInd], vertices[vertInd + 1], vertices[vertInd + 2], vertices[vertInd + 3]);
 		
 		vertHomo = vec4_mul_mat4(vertHomo, viewport);
+
+		vsVP[i] = vertHomo;
 		vs[i] = vertHomo.xyz / vertHomo.w;
 	}
 
@@ -102,6 +140,14 @@ kernel void tiler(
     // loop over all tiles in bounding box
     for(int x = tilebboxmin[0]; x <= tilebboxmax[0]; x++) {
     	for(int y = tilebboxmin[1]; y <= tilebboxmax[1]; y++) {
+
+    			float2 pix = (float2)(x * tileSize, y * tileSize);
+	            float3 bc_screen  = barycentric(vs[0].xy, vs[1].xy, vs[2].xy, (float2)(pix.x,pix.y), 1);
+	            // float3 bc_clip    = (float3)(bc_screen.x/vsVP[0][3], bc_screen.y/vsVP[1][3], bc_screen.z/vsVP[2][3]);
+
+	            // bc_clip = bc_clip/(bc_clip.x+bc_clip.y+bc_clip.z);
+
+	            // if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0) continue;
 
             // get index of tile
     		int tileInd = y * tilesX + x;
@@ -206,7 +252,9 @@ kernel void tileRasterizer(
 	            //printf("frag: %f\n", frag_depth);
 	            int pixInd = pix.x+pix.y*width;
 
-	            if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[pixInd]>frag_depth) continue;
+
+	            // this maybe should be atomic!
+	            if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[pixInd]<frag_depth) continue;
 
 	            zbuffer[pixInd] = frag_depth;
 	            int offsetInd = (int)(pixInd * (offset)) % (width * height);
@@ -300,7 +348,7 @@ kernel void rasterizer(
             //printf("frag: %f\n", frag_depth);
             int pixInd = pix.x+pix.y*width;
 
-            if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[pixInd]>frag_depth) continue;
+            if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[pixInd]<frag_depth) continue;
 
             zbuffer[pixInd] = frag_depth;
             zbuffer[(int)(pixInd * (offset))] = frag_depth;
@@ -329,7 +377,7 @@ kernel void fragment(
 		int width,
 		int height,
 		float offset,
-		float3 viewDir,
+		// float3 viewDir,
 		global const float* zBuffer,
 		global const float* normals,
 		global const float* uvs,
@@ -354,9 +402,9 @@ kernel void fragment(
     	// float4 col = read_imagef(tex, sampler, uv);
     	
 
-		float val = dot(n, viewDir);
+		// float val = dot(n, viewDir);
 		// col = (float4)(val,val,val,1);
-		col.r *= val;
+		// col.r *= val;
 		col.g = n.y;
 		// col.g *= val;
 		// color[i*3] = (char)(n.x * 255);
@@ -368,40 +416,3 @@ kernel void fragment(
 	}
 }
 
-kernel void vertex(
-		ulong n,
-		float offset,
-		global const float4* mvp, 
-		global const float4* modelMat,
-		global const float* vertices,
-		global const float* normalsIn,
-		global float* positions,
-		global float* normalsOut
-	)
-{
-	// printf("vertex");
-	size_t i = get_global_id(0);
-
-	float4 vert = (float4)(vertices[i*3], vertices[i*3+1], vertices[i*3+2], 1.0f);
-	float4 normal = (float4)(normalsIn[i*3], normalsIn[i*3+1], normalsIn[i*3+2],1.0f);
-
-	
-
-	normal = vec4_mul_mat4(normal, modelMat);
-	normalize(normal);
-
-	vert = vec4_mul_mat4(vert, mvp);
-
-	vert.xy += (float2)(cos(100 *vert.x), sin(100 * vert.y)) * offset;
-
-	positions[i*4] = vert.x;
-	positions[i*4+1] = vert.y;
-	positions[i*4+2] = vert.z;
-	positions[i*4+3] = vert.w;
-
-	
-
-	normalsOut[i*3] = normal.x;
-	normalsOut[i*3+1] = normal.y;
-	normalsOut[i*3+2] = normal.z;
-}

@@ -195,9 +195,9 @@ int main( int argc, char** argv )
     
     modelMat = glm::translate(modelMat, glm::vec3(0,0,1));
     
-    for(int i = 0; i < width*height; i++) {
-        zbuffer[i] = std::numeric_limits<float>::min();
-    }
+//    for(int i = 0; i < width*height; i++) {
+//        zbuffer[i] = std::numeric_limits<float>::min();
+//    }
     
     clRend.loadData(model->faces_2, model->verts_2, model->normals_2, model->uvs_2, model->diffusemap_, model->nfaces(), viewportMat, data, zbuffer, width, height);
     
@@ -245,7 +245,7 @@ int main( int argc, char** argv )
 
        
         
-        projMat = glm::perspective(projAnim.getVal() * 45, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
+//        projMat = glm::perspective(projAnim.getVal() * 45, (GLfloat)width / (GLfloat)height, .001f, 100000.0f);
         
 //        std::cout << "valvert" << vertAnim.getVal() << std::endl;
 //        std::cout << "valrast" << rastAnim.getVal() << std::endl;

@@ -257,12 +257,22 @@ kernel void tileRasterizer(
 	            if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[pixInd]<frag_depth) continue;
 
 	            zbuffer[pixInd] = frag_depth;
-	            int offsetInd = (int)(pixInd * (offset)) % (width * height);
-	            zbuffer[offsetInd] = frag_depth;
 
-	            screen[pixInd*3] = (.5f + .5f * bc_screen.x) * 255;
-	            screen[pixInd*3+1] = (.5f + .5f * bc_screen.y) * 255;
-	            screen[pixInd*3*50+2] = (.5f + .5f * bc_screen.z) * 255;
+	            int offsetInd = (int)(pixInd * offset) % (width * height);
+	            offsetInd = max(0,offsetInd);
+	            // zbuffer[offsetInd] = frag_depth;
+
+	            int offsetPixIndX = (int)( ( fabs((float)(.1f * offset)) * pix.x));
+	            int offsetPixIndY = (int)( (fabs((float)(.1f * offset)) * pix.y));
+	            int offsetPixInd = offsetPixIndX+offsetPixIndY*width;
+	            // screen[offsetPixInd*3] = (.5f + .5f * bc_screen.x) * 255;
+	            // screen[offsetPixInd*3+1] = (.5f + .5f * bc_screen.y) * 255;
+	            // screen[offsetPixInd*3+2] = (.5f + .5f * bc_screen.z) * 255;
+
+
+	            // screen[pixInd*3] = (.5f + .5f * bc_screen.x) * 255;
+	            // screen[pixInd*3+1] = (.5f + .5f * bc_screen.y) * 255;
+	            // screen[pixInd*3+2] = (.5f + .5f * bc_screen.z) * 255;
 
 	            float3 n = interpolateBary3(ns[0], ns[1], ns[2], bc_clip);
 	            normalsOut[pixInd*3] = n.x;
@@ -277,98 +287,6 @@ kernel void tileRasterizer(
 	        }
 	    }
 	}
-}
-
-kernel void rasterizer(
-		ulong nTris,
-		int width,
-		int height,
-		float offset,
-		global float* zbuffer,
-		global const float4* viewport, 
-		global const float* vertices,
-		global const float* normalsIn,
-		global const float* uvsIn,
-		global const int* indices,
-		global char* screen,
-		global float* normalsOut,
-		global float* uvsOut)
-{
-	// printf("rast");
-	size_t faceInd = get_global_id(0);
-	offset = 1 + offset;
-
-	float3 homoZs;
-	float4 vsVP[3];
-	float3 vs[3];
-	float3 ns[3];
-	float2 uvs[3];
-	for(int i = 0; i < 3; i++) {
-		// indices are vertex/uv/normal
-		int vertInd = indices[faceInd*9+i*3];
-		//int uvInd = indices[faceInd*9+i*3+1];
-		//int normalInd = indices[faceInd*9+i*3+2];
-		// normalInd = vertInd;
-		// uv
-		
-		float4 vertHomo = (float4)(vertices[vertInd*4], vertices[vertInd*4+1], vertices[vertInd*4+2], vertices[vertInd*4+3]);
-		
-		homoZs[i] = vertHomo.z;
-		vertHomo = vec4_mul_mat4(vertHomo, viewport);
-		vsVP[i] = vertHomo;
-		vs[i] = vertHomo.xyz / vertHomo.w;
-
-		ns[i] = (float3)(normalsIn[vertInd*3], normalsIn[vertInd*3+1], normalsIn[vertInd*3+2]);
-		uvs[i] = (float2)(uvsIn[vertInd * 2], uvsIn[vertInd * 2 + 1]);
-	}
-
-	float2 bboxmin = (float2)(INFINITY,INFINITY);
-	float2 bboxmax = (float2)(-INFINITY,-INFINITY);
-
-	float2 clampCoords = (float2)(width-1, height-1);
-
-	for (int i=0; i<3; i++) {
-        for (int j=0; j<2; j++) {
-            bboxmin[j] = max(0.f, min(bboxmin[j], vs[i][j]));
-            bboxmax[j] = min(clampCoords[j], max(bboxmax[j], vs[i][j]));
-        }
-    }
-
-    int2 pix;
-    for (pix.x=bboxmin.x; pix.x<=bboxmax.x; pix.x++) {
-        for (pix.y=bboxmin.y; pix.y<=bboxmax.y; pix.y++) {
-            float3 bc_screen  = barycentric(vs[0].xy, vs[1].xy, vs[2].xy, (float2)(pix.x,pix.y), offset);
-            float3 bc_clip    = (float3)(bc_screen.x/vsVP[0][3], bc_screen.y/vsVP[1][3], bc_screen.z/vsVP[2][3]);
-            //printf("bccl: %f %f %f\n", bc_clip.x, bc_clip.y, bc_clip.z);
-
-            bc_clip = bc_clip/(bc_clip.x+bc_clip.y+bc_clip.z);
-
-    		
-            float frag_depth = dot(homoZs, bc_clip);// clipc[2]*bc_clip;
-            //printf("frag: %f\n", frag_depth);
-            int pixInd = pix.x+pix.y*width;
-
-            if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[pixInd]<frag_depth) continue;
-
-            zbuffer[pixInd] = frag_depth;
-            zbuffer[(int)(pixInd * (offset))] = frag_depth;
-
-            screen[pixInd*3] = (.5f + .5f * bc_screen.x) * 255;
-            screen[pixInd*3+1] = (.5f + .5f * bc_screen.y) * 255;
-            screen[pixInd*3*50+2] = (.5f + .5f * bc_screen.z) * 255;
-
-            float3 n = interpolateBary3(ns[0], ns[1], ns[2], bc_clip);
-            normalsOut[pixInd*3] = n.x;
-            normalsOut[pixInd*3+1] = n.y;
-            normalsOut[pixInd*3+2] = n.z;
-
-            float2 uv = interpolateBary2(uvs[0], uvs[1], uvs[2], bc_clip);
-            uvsOut[pixInd * 2] = uv.x;
-            uvsOut[pixInd * 2 + 1] = uv.y;
-        	// printf("uv: %f %f", uv.x, uv.y);
-
-        }
-    }
 }
 
 __constant sampler_t sampler = CLK_NORMALIZED_COORDS_TRUE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
@@ -389,7 +307,8 @@ kernel void fragment(
 	size_t i = get_global_id(0);
 
 	// printf("zbuf: %f", zBuffer[i]);
-	if(zBuffer[i] > .1f) {
+	//if(zBuffer[i] > .1f) {
+	{
 		int x = i % width;
 		int y = i / width;
 
@@ -416,3 +335,94 @@ kernel void fragment(
 	}
 }
 
+// kernel void rasterizer(
+// 		ulong nTris,
+// 		int width,
+// 		int height,
+// 		float offset,
+// 		global float* zbuffer,
+// 		global const float4* viewport, 
+// 		global const float* vertices,
+// 		global const float* normalsIn,
+// 		global const float* uvsIn,
+// 		global const int* indices,
+// 		global char* screen,
+// 		global float* normalsOut,
+// 		global float* uvsOut)
+// {
+// 	// printf("rast");
+// 	size_t faceInd = get_global_id(0);
+// 	offset = 1 + offset;
+
+// 	float3 homoZs;
+// 	float4 vsVP[3];
+// 	float3 vs[3];
+// 	float3 ns[3];
+// 	float2 uvs[3];
+// 	for(int i = 0; i < 3; i++) {
+// 		// indices are vertex/uv/normal
+// 		int vertInd = indices[faceInd*9+i*3];
+// 		//int uvInd = indices[faceInd*9+i*3+1];
+// 		//int normalInd = indices[faceInd*9+i*3+2];
+// 		// normalInd = vertInd;
+// 		// uv
+		
+// 		float4 vertHomo = (float4)(vertices[vertInd*4], vertices[vertInd*4+1], vertices[vertInd*4+2], vertices[vertInd*4+3]);
+		
+// 		homoZs[i] = vertHomo.z;
+// 		vertHomo = vec4_mul_mat4(vertHomo, viewport);
+// 		vsVP[i] = vertHomo;
+// 		vs[i] = vertHomo.xyz / vertHomo.w;
+
+// 		ns[i] = (float3)(normalsIn[vertInd*3], normalsIn[vertInd*3+1], normalsIn[vertInd*3+2]);
+// 		uvs[i] = (float2)(uvsIn[vertInd * 2], uvsIn[vertInd * 2 + 1]);
+// 	}
+
+// 	float2 bboxmin = (float2)(INFINITY,INFINITY);
+// 	float2 bboxmax = (float2)(-INFINITY,-INFINITY);
+
+// 	float2 clampCoords = (float2)(width-1, height-1);
+
+// 	for (int i=0; i<3; i++) {
+//         for (int j=0; j<2; j++) {
+//             bboxmin[j] = max(0.f, min(bboxmin[j], vs[i][j]));
+//             bboxmax[j] = min(clampCoords[j], max(bboxmax[j], vs[i][j]));
+//         }
+//     }
+
+//     int2 pix;
+//     for (pix.x=bboxmin.x; pix.x<=bboxmax.x; pix.x++) {
+//         for (pix.y=bboxmin.y; pix.y<=bboxmax.y; pix.y++) {
+//             float3 bc_screen  = barycentric(vs[0].xy, vs[1].xy, vs[2].xy, (float2)(pix.x,pix.y), offset);
+//             float3 bc_clip    = (float3)(bc_screen.x/vsVP[0][3], bc_screen.y/vsVP[1][3], bc_screen.z/vsVP[2][3]);
+//             //printf("bccl: %f %f %f\n", bc_clip.x, bc_clip.y, bc_clip.z);
+
+//             bc_clip = bc_clip/(bc_clip.x+bc_clip.y+bc_clip.z);
+
+    		
+//             float frag_depth = dot(homoZs, bc_clip);// clipc[2]*bc_clip;
+//             //printf("frag: %f\n", frag_depth);
+//             int pixInd = pix.x+pix.y*width;
+
+//             if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[pixInd]<frag_depth) continue;
+
+//             zbuffer[pixInd] = frag_depth;
+//             zbuffer[(int)(pixInd * (offset))] = frag_depth;
+
+//             screen[pixInd*3] = (.5f + .5f * bc_screen.x) * 255;
+//             screen[pixInd*3+1] = (.5f + .5f * bc_screen.y) * 255;
+//             screen[pixInd*3*50+2] = (.5f + .5f * bc_screen.z) * 255;
+
+//             float3 n = interpolateBary3(ns[0], ns[1], ns[2], bc_clip);
+//             normalsOut[pixInd*3] = n.x;
+//             normalsOut[pixInd*3+1] = n.y;
+//             normalsOut[pixInd*3+2] = n.z;
+
+//             float2 uv = interpolateBary2(uvs[0], uvs[1], uvs[2], bc_clip);
+//             uvsOut[pixInd * 2] = uv.x;
+//             uvsOut[pixInd * 2 + 1] = uv.y;
+//         	// printf("uv: %f %f", uv.x, uv.y);
+
+//         }
+//     }
+// }

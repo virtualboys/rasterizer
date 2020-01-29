@@ -20,7 +20,7 @@ public:
     
     bool init();
     void loadProgram(std::string path);
-    void loadData(std::vector<int> inds, std::vector<float> verts, std::vector<float> normals, std::vector<float> uvs, TGAImage& tex, int nFaces, glm::mat4 viewport, unsigned char* screen, GLuint screenTex, float* zBuffer, int width, int height);
+    void loadData(std::vector<int> inds, std::vector<float> verts, std::vector<float> normals, std::vector<float> uvs, TGAImage& tex, int nFaces, glm::mat4 viewport, unsigned char* screen, float* zBuffer, int width, int height);
     void setMVP(glm::mat4 model, glm::mat4 view, glm::mat4 proj);
     void clear(unsigned char val);
     void runProgram();

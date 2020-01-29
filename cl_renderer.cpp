@@ -125,7 +125,7 @@ void cl_renderer::loadProgram(std::string path) {
     std::cout << "Program at " << path << " loaded." << std::endl;
 }
 
-void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std::vector<float> normals, std::vector<float> uvs, TGAImage& tex, int nFaces, glm::mat4 viewport, unsigned char* screen, GLuint screenTex, float* zBuffer, int width, int height) {
+void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std::vector<float> normals, std::vector<float> uvs, TGAImage& tex, int nFaces, glm::mat4 viewport, unsigned char* screen, float* zBuffer, int width, int height) {
     try {
         if(width % TILE_SIZE != 0 || height % TILE_SIZE != 0) {
             std::cerr << "Screen dimensions must be multiple of tile size: " << TILE_SIZE << std::endl;
@@ -140,12 +140,12 @@ void cl_renderer::loadData(std::vector<int> inds, std::vector<float> verts, std:
         this->width = width;
         this->height = height;
         this->screen = screen;
-        this->screenTex = screenTex;
+//        this->screenTex = screenTex;
         
         clearColorData = new unsigned char[numPixels * 3];
         std::fill_n(clearColorData, numPixels * 3, 0);
         clearDepthData = new float[numPixels];
-        std::fill_n(clearDepthData, numPixels, std::numeric_limits<float>::max());
+        std::fill_n(clearDepthData, numPixels, 0);
         
         tilesX = width / TILE_SIZE;
         tilesY = height / TILE_SIZE;
